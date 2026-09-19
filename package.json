@@ -6,7 +6,11 @@
   "bin": {
     "jevalyzer": "./src/cli.ts"
   },
-  "files": ["src", "README.md", "LICENSE"],
+  "files": [
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
   "engines": {
     "bun": ">=1.2.0"
   },
