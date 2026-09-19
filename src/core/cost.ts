@@ -11,16 +11,28 @@ export function jevCost(inputTokens: number): number {
 }
 
 /**
- * Rough per-million rates for the models that appear in agent transcripts, used
- * only to attribute what the sessions themselves cost. Missing entries yield
- * null rather than a fabricated number.
+ * Per-million list rates, Anthropic first-party API, checked against the
+ * current pricing table rather than recalled.
+ *
+ * An earlier version of this table was written from memory and was wrong in
+ * both directions: Opus at $15/$75 (3x too high) and Fable at $3/$15 (Fable is
+ * the most expensive tier, not the cheapest). Anything not listed returns null
+ * - a missing number is better than a confident wrong one, so GPT, Gemini, GLM
+ * and Qwen sessions are simply absent from the cost view.
+ *
+ * Cache reads are ~0.1x input and cache writes ~1.25x input.
  */
-const SESSION_RATES: { match: RegExp; input: number; output: number; cacheRead: number }[] = [
-  { match: /opus/i, input: 15, output: 75, cacheRead: 1.5 },
-  { match: /sonnet/i, input: 3, output: 15, cacheRead: 0.3 },
-  { match: /haiku/i, input: 1, output: 5, cacheRead: 0.1 },
-  { match: /fable/i, input: 3, output: 15, cacheRead: 0.3 },
+const SESSION_RATES: { match: RegExp; input: number; output: number }[] = [
+  { match: /^claude-fable/i, input: 10, output: 50 },
+  { match: /^claude-mythos/i, input: 10, output: 50 },
+  { match: /^claude-opus/i, input: 5, output: 25 },
+  { match: /^claude-sonnet-4/i, input: 3, output: 15 },
+  { match: /^claude-sonnet/i, input: 2, output: 10 },
+  { match: /^claude-haiku/i, input: 1, output: 5 },
 ];
+
+const CACHE_READ_MULTIPLIER = 0.1;
+const CACHE_WRITE_MULTIPLIER = 1.25;
 
 export function sessionCost(
   model: string | null,
@@ -32,7 +44,7 @@ export function sessionCost(
   return (
     (usage.input / 1e6) * rate.input +
     (usage.output / 1e6) * rate.output +
-    (usage.cacheRead / 1e6) * rate.cacheRead +
-    (usage.cacheCreate / 1e6) * rate.input * 1.25
+    (usage.cacheRead / 1e6) * rate.input * CACHE_READ_MULTIPLIER +
+    (usage.cacheCreate / 1e6) * rate.input * CACHE_WRITE_MULTIPLIER
   );
 }

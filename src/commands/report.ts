@@ -333,8 +333,7 @@ export async function report(opts: { out: string; open?: boolean }): Promise<voi
         const cost = sessionCost(s.ev.model, ex?.usage ?? null);
         if (cost) dollars += cost;
       }
-      const delivered = items.filter((s) => s.outcome === 'delivered').length;
-      return { model: g.key, dollars, delivered, n: items.length };
+      return { model: g.key, dollars, n: items.length };
     })
     .filter((r) => r.dollars > 0)
     .sort((a, b) => b.dollars - a.dollars);
@@ -342,28 +341,22 @@ export async function report(opts: { out: string; open?: boolean }): Promise<voi
   sections.push(
     card(
       'What the sessions themselves cost',
-      'Attributed from the token usage the harnesses recorded, at public list prices. Cost per delivered outcome is the number that actually matters when comparing an expensive model against a cheap one.',
+      'Notional, not billed. Attributed from the token usage each harness recorded, at Anthropic list prices - so if these sessions ran on a subscription, this is what the same tokens would have cost through the API, not money that left your account. Only models with a published rate appear; sessions on other providers are absent rather than guessed at. Cache reads dominate long agentic runs, which is why the totals are larger than they feel.',
       costRows.length
         ? withTable(
             hbars(
               costRows.map((r) => ({
                 label: r.model,
                 value: r.dollars,
-                note: r.delivered ? `${usd(r.dollars / r.delivered)}/delivered` : 'none delivered',
+                note: `${r.n} exchanges`,
                 tip: `${r.model}\n${usd(r.dollars)} over ${r.n} exchanges`,
               })),
               { unit: '' },
             ),
             {
-              headers: ['Model', 'Spend', 'Delivered', 'Cost per delivered', 'n'],
-              numeric: [false, true, true, true, true],
-              rows: costRows.map((r) => [
-                r.model,
-                usd(r.dollars),
-                r.delivered,
-                r.delivered ? usd(r.dollars / r.delivered) : '-',
-                r.n,
-              ]),
+              headers: ['Model', 'Spend', 'Exchanges'],
+              numeric: [false, true, true],
+              rows: costRows.map((r) => [r.model, usd(r.dollars), r.n]),
             },
           )
         : '<p class="empty">No token usage was recorded for these sessions.</p>',
