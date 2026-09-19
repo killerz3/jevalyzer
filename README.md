@@ -40,15 +40,26 @@ before signing up for anything.
 
 ## Bring your own account
 
-Jevalyzer ships with no credentials. It uses **your** Vercel AI Gateway key:
+Jevalyzer ships with no credentials — it uses **your** key, via either of two
+backends. Whichever one you have credentials for is picked automatically.
 
-1. Create one at the [AI Gateway dashboard](https://vercel.com/d?to=/[team]/~/ai-gateway/api-keys)
+**Vercel AI Gateway** (`--backend gateway`, model `typesafe-ai/jev`)
+
+1. Create a key at the [AI Gateway dashboard](https://vercel.com/d?to=/[team]/~/ai-gateway/api-keys)
 2. `jevalyzer auth`, or `export AI_GATEWAY_API_KEY=vck_...`
 
-Precedence is `--api-key` > `AI_GATEWAY_API_KEY` > `~/.jevalyzer/config.json`
-(written mode 600). `--model` accepts any AI SDK evaluation model, so you can
-point at `typesafe-ai/jev` directly with a TypeSafe key, or at an
-Anthropic/OpenAI/Google model instead.
+> Vercel requires a **credit card on file** before the Gateway will serve any
+> request, including free ones. If you would rather not add one, use the direct
+> backend below.
+
+**TypeSafe directly** (`--backend typesafe`, model `jev-latest`)
+
+1. Create a key at [console.typesafe.ai/keys](https://console.typesafe.ai/keys)
+2. `jevalyzer auth --typesafe`, or `export TYPESAFE_AI_API_KEY=sk-...`
+
+Precedence is `--api-key` > environment > `~/.jevalyzer/config.json` (mode 600).
+`--model` accepts any AI SDK evaluation model, so you can also point at an
+Anthropic, OpenAI or Google model instead.
 
 ## What it costs
 

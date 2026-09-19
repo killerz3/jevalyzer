@@ -1,7 +1,7 @@
 import { experimental_evaluate as evaluate } from 'ai';
-import { createGateway } from '@ai-sdk/gateway';
 import { ADAPTERS } from '../adapters/registry.ts';
-import { maskKey, resolveKey } from '../core/config.ts';
+import { maskKey, readConfig, resolveKey } from '../core/config.ts';
+import { BILLING_HELP, isBillingBlock, resolveProvider, type Backend } from '../core/provider.ts';
 import { c, num } from '../core/fmt.ts';
 import { HOME, Store } from '../core/store.ts';
 import { BANK_VERSION } from '../core/questions.ts';
@@ -10,7 +10,7 @@ const ok = (s: string) => c.green('ok   ') + s;
 const warn = (s: string) => c.yellow('warn ') + s;
 const bad = (s: string) => c.red('fail ') + s;
 
-export async function doctor(opts: { probe?: boolean }): Promise<void> {
+export async function doctor(opts: { probe?: boolean; backend?: Backend }): Promise<void> {
   console.log(c.bold('\nEnvironment'));
   const bunVersion = Bun.version;
   console.log(ok(`Bun ${bunVersion}`));
@@ -24,8 +24,16 @@ export async function doctor(opts: { probe?: boolean }): Promise<void> {
   console.log(c.bold('\nCredentials'));
   const { key, source, path } = await resolveKey();
   console.log(
-    key ? ok(`key from ${c.bold(source)}: ${maskKey(key)}`) : warn('no key - run: jevalyzer auth'),
+    key
+      ? ok(`AI Gateway key from ${c.bold(source)}: ${maskKey(key)}`)
+      : c.dim('--   no AI Gateway key'),
   );
+  const cfg = await readConfig();
+  const tsKey = process.env.TYPESAFE_AI_API_KEY ?? process.env.TYPESAFE_API_KEY ?? cfg.typesafeApiKey;
+  console.log(
+    tsKey ? ok(`TypeSafe key: ${maskKey(tsKey)}`) : c.dim('--   no direct TypeSafe key'),
+  );
+  if (!key && !tsKey) console.log(warn('no credentials at all - run: jevalyzer auth'));
   console.log(c.dim(`     config: ${path}`));
 
   console.log(c.bold('\nSession sources'));
@@ -59,15 +67,18 @@ export async function doctor(opts: { probe?: boolean }): Promise<void> {
   }
 
   console.log(c.bold('\nProbe'));
-  if (!key) {
+  let provider;
+  try {
+    provider = await resolveProvider({ backend: opts.backend });
+  } catch {
     console.log(warn('skipped: no API key'));
     return;
   }
+  console.log(c.dim(`     via ${provider.backend} (${provider.modelId})`));
   try {
-    const gateway = createGateway({ apiKey: key });
     const t0 = Date.now();
     const result = await evaluate({
-      model: gateway.evaluationModel('typesafe-ai/jev'),
+      model: provider.model,
       state: 'The build failed with exit code 1.',
       questions: {
         passed: {
@@ -92,6 +103,7 @@ export async function doctor(opts: { probe?: boolean }): Promise<void> {
     }
   } catch (e) {
     console.log(bad(e instanceof Error ? e.message : String(e)));
+    if (isBillingBlock(e)) console.log(c.yellow(BILLING_HELP));
   }
 }
 

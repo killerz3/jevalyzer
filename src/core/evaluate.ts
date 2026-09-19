@@ -1,5 +1,4 @@
-import { experimental_evaluate as evaluate } from 'ai';
-import { createGateway } from '@ai-sdk/gateway';
+import { experimental_evaluate as evaluate, type Experimental_EvaluationModel } from 'ai';
 import type { Packed } from './budget.ts';
 import { QUESTIONS } from './questions.ts';
 import type { StoredAnswer } from './store.ts';
@@ -11,8 +10,8 @@ import type { StoredAnswer } from './store.ts';
  */
 
 export interface EvaluateOptions {
-  apiKey: string;
-  model: string;
+  model: Experimental_EvaluationModel;
+  /** Gateway-only option; harmless and ignored on the direct TypeSafe route. */
   zeroDataRetention: boolean;
   maxRetries?: number;
 }
@@ -43,8 +42,7 @@ function confidenceOf(meta: unknown): number | null {
 }
 
 export function makeEvaluator(opts: EvaluateOptions) {
-  const gateway = createGateway({ apiKey: opts.apiKey });
-  const model = gateway.evaluationModel(opts.model);
+  const model = opts.model;
 
   return async function run(packed: Packed, signal?: AbortSignal): Promise<EvaluationOutcome> {
     const result = await evaluate({

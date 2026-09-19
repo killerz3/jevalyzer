@@ -7,7 +7,10 @@ import { HOME } from './store.ts';
  */
 
 export interface Config {
+  /** Vercel AI Gateway key (vck_...). */
   apiKey?: string;
+  /** Direct TypeSafe key, used when the gateway route is unavailable. */
+  typesafeApiKey?: string;
   model?: string;
 }
 

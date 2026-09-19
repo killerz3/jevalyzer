@@ -42,8 +42,9 @@ program
   .option('--dry-run', 'show exactly what would be sent, and send nothing')
   .option('--budget <usd>', 'refuse to exceed this spend', (v) => parseFloat(v), 5)
   .option('--concurrency <n>', 'parallel requests', (v) => parseInt(v, 10), 20)
-  .option('--model <id>', 'evaluation model', 'typesafe-ai/jev')
-  .option('--api-key <key>', 'AI Gateway key (else AI_GATEWAY_API_KEY, else config)')
+  .option('--model <id>', 'evaluation model (default depends on --backend)')
+  .option('--backend <name>', 'gateway | typesafe (default: whichever key you have)')
+  .option('--api-key <key>', 'API key for the chosen backend (else env, else config)')
   .option('--redact', 'strip secrets, emails and home paths before sending')
   .option('--no-zdr', 'do not request zero data retention')
   .option('--force', 're-evaluate exchanges already in the cache')
@@ -74,7 +75,8 @@ program
 
 program
   .command('auth')
-  .description('Store your own Vercel AI Gateway API key.')
+  .description('Store your own API key (Vercel AI Gateway, or TypeSafe directly).')
+  .option('--typesafe', 'store a direct TypeSafe key instead of a Gateway key')
   .option('--show', 'show where the key is read from, without printing it')
   .option('--clear', 'remove the stored key')
   .action(async (opts) => {
@@ -86,6 +88,7 @@ program
   .command('doctor')
   .description('Check the key, the SDK and which session sources were found.')
   .option('--probe', 'send one tiny request to confirm the model resolves')
+  .option('--backend <name>', 'gateway | typesafe')
   .action(async (opts) => {
     const { doctor } = await import('./commands/doctor.ts');
     await doctor(opts);

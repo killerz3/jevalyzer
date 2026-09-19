@@ -1,7 +1,8 @@
 import type { Exchange, SourceId } from '../adapters/types.ts';
 import { allExchanges, scanSources } from '../adapters/registry.ts';
 import { TokenCalibrator, packExchange, type Packed } from '../core/budget.ts';
-import { SETUP_HELP, resolveKey } from '../core/config.ts';
+import { SETUP_HELP } from '../core/config.ts';
+import { BILLING_HELP, isBillingBlock, resolveProvider, type Backend } from '../core/provider.ts';
 import { JEV_FREE_UNTIL, JEV_INPUT_USD_PER_MTOK, jevCost } from '../core/cost.ts';
 import { makeEvaluator, pool, RateLimiter } from '../core/evaluate.ts';
 import { c, num, table, usd } from '../core/fmt.ts';
@@ -15,7 +16,8 @@ export interface AnalyzeOptions {
   dryRun?: boolean;
   budget: number;
   concurrency: number;
-  model: string;
+  model?: string;
+  backend?: Backend;
   apiKey?: string;
   redact?: boolean;
   zdr: boolean;
@@ -102,9 +104,15 @@ export async function analyze(opts: AnalyzeOptions): Promise<void> {
     return;
   }
 
-  const { key, source } = await resolveKey(opts.apiKey);
-  if (!key) {
-    console.log(c.yellow(SETUP_HELP));
+  let provider;
+  try {
+    provider = await resolveProvider({
+      backend: opts.backend,
+      apiKey: opts.apiKey,
+      model: opts.model,
+    });
+  } catch (e) {
+    console.log(c.yellow(e instanceof Error && e.message === 'no-key' ? SETUP_HELP : String(e)));
     store.close();
     process.exitCode = 1;
     return;
@@ -120,7 +128,13 @@ export async function analyze(opts: AnalyzeOptions): Promise<void> {
           : `\nThis will send ${num(jobs.length)} requests and cost about ${usd(estCost)} at $${JEV_INPUT_USD_PER_MTOK}/M.`,
       ),
     );
-    console.log(c.dim(`Key from ${source}. Transcript text will be sent to the AI Gateway.`));
+    console.log(
+      c.dim(
+        `Key from ${provider.keySource} (${provider.backend}, ${provider.modelId}). Transcript text will be sent to ${
+          provider.backend === 'gateway' ? 'the Vercel AI Gateway' : 'api.typesafe.ai'
+        }.`,
+      ),
+    );
     const answer = prompt('Continue? [y/N]') ?? '';
     if (!/^y(es)?$/i.test(answer.trim())) {
       console.log('Aborted.');
@@ -129,11 +143,7 @@ export async function analyze(opts: AnalyzeOptions): Promise<void> {
     }
   }
 
-  const run = makeEvaluator({
-    apiKey: key,
-    model: opts.model,
-    zeroDataRetention: opts.zdr,
-  });
+  const run = makeEvaluator({ model: provider.model, zeroDataRetention: opts.zdr });
   const limiter = new RateLimiter(1000);
 
   // Segments of one split exchange are merged before being stored.
@@ -224,6 +234,7 @@ export async function analyze(opts: AnalyzeOptions): Promise<void> {
     ),
   );
   for (const f of failures) console.log(c.yellow(`  ! ${f}`));
+  if (failures.some(isBillingBlock)) console.log(c.yellow(BILLING_HELP));
   console.log(c.dim('\n  Next: ') + 'jevalyzer report --open' + c.dim('  or  ') + 'jevalyzer tui');
   store.close();
 }

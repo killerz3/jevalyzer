@@ -23,6 +23,7 @@
   "license": "MIT",
   "dependencies": {
     "@ai-sdk/gateway": "^4.0.87",
+    "@ai-sdk/typesafe-ai": "3.0.4",
     "ai": "7.0.105",
     "commander": "^15.0.0",
     "ink": "^7.1.1",
