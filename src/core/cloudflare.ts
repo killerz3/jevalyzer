@@ -14,6 +14,12 @@ import type {
  * needs no payment method at all, which is the only way to score a large
  * archive for free.
  *
+ * STATUS (2026-09-19): Cloudflare's docs describe `typesafe/jev`, but the model
+ * is not in the Workers AI catalogue - a model search returns 65 models with no
+ * Jev among them, and every plausible id returns 7000 "No route for that URI".
+ * This adapter is kept, and tested against the documented contract, for when the
+ * model actually ships; it is never auto-selected until then.
+ *
  * There is no AI SDK provider package for this, so this implements the
  * evaluation-model contract directly against Cloudflare's REST API. Two
  * differences from the AI SDK dialect have to be bridged:

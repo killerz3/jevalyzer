@@ -75,9 +75,12 @@ export async function resolveProvider(args: ResolveArgs): Promise<Resolved> {
     cfg.cloudflareApiToken;
   const cfReady = Boolean(cfAccount && cfToken);
 
-  // Prefer the route that can actually finish a large run for free.
+  // Cloudflare is NOT auto-selected: its docs list typesafe/jev, but the model
+  // is absent from the Workers AI catalogue and every model id returns 7000 "No
+  // route for that URI". The adapter is kept and tested for when it ships, but
+  // it must be asked for explicitly rather than silently breaking a run.
   const chosen: Backend | null =
-    args.backend ?? (cfReady ? 'cloudflare' : gatewayKey ? 'gateway' : typesafeKey ? 'typesafe' : null);
+    args.backend ?? (gatewayKey ? 'gateway' : typesafeKey ? 'typesafe' : cfReady ? 'cloudflare' : null);
 
   if (chosen === 'cloudflare') {
     if (!cfAccount || !cfToken) {
@@ -148,8 +151,6 @@ request - including free ones. Two ways forward:
   1. Add a card:  https://vercel.com/d?to=%2F%5Bteam%5D%2F%7E%2Fai%3Fmodal%3Dadd-credit-card
      Jev stays free until 2026-09-25, and your free credits unlock.
 
-  2. Skip Vercel entirely. Cloudflare Workers AI serves the same model on a
-     free daily allocation with no payment method required:
-       jevalyzer auth --cloudflare
-       jevalyzer analyze --backend cloudflare
+  2. Keep the free tier and let it drip - runs resume, so nothing is wasted:
+       while ! jevalyzer analyze --patient --yes | grep -q "Nothing new"; do sleep 600; done
 `;
