@@ -4,7 +4,7 @@ import { TokenCalibrator, budgetFor, packExchange, type Packed } from '../core/b
 import { SETUP_HELP } from '../core/config.ts';
 import { BILLING_HELP, isBillingBlock, resolveProvider, type Backend } from '../core/provider.ts';
 import { JEV_FREE_UNTIL, JEV_INPUT_USD_PER_MTOK, jevCost } from '../core/cost.ts';
-import { isRateLimit, makeEvaluator, pool, RateLimiter } from '../core/evaluate.ts';
+import { isContextOverflow, isRateLimit, makeEvaluator, pool, RateLimiter } from '../core/evaluate.ts';
 import { c, num, table, usd } from '../core/fmt.ts';
 import { BANK_VERSION, bankFor, bankSize, type Profile } from '../core/questions.ts';
 import { redactDeep } from '../core/redact.ts';
@@ -214,6 +214,11 @@ export async function analyze(opts: AnalyzeOptions): Promise<AnalyzeResult> {
   /** Distinct failure message -> how many times it happened. */
   const failures = new Map<string, number>();
 
+  // The reported token count covers state AND questions, so the chars side of
+  // the ratio has to include the question bank too - otherwise a small state
+  // makes the model look absurdly token-dense and the packer over-truncates
+  // everything after it.
+  const questionChars = JSON.stringify(questions).length;
   const progress = new Progress(!opts.quiet && process.stderr.isTTY === true);
   progress.start(jobs.length);
   const tick = () =>
@@ -231,10 +236,30 @@ export async function analyze(opts: AnalyzeOptions): Promise<AnalyzeResult> {
     opts.patient ? 1 : opts.concurrency,
     async (job) => {
       await limiter.take();
-      const out = await run(job.packed);
-      limiter.recover();
-      cal.observe(JSON.stringify(job.packed.state).length, out.inputTokens);
-      return out;
+      try {
+        const out = await run(job.packed);
+        limiter.recover();
+        cal.observe(JSON.stringify(job.packed.state).length + questionChars, out.inputTokens);
+        return out;
+      } catch (e) {
+        if (!isContextOverflow(e)) throw e;
+        // The estimate was optimistic for this one. Re-pack it much harder and
+        // try again rather than losing the exchange: a first run has no
+        // calibration to work from, and one bad guess should not drop data.
+        for (const shrink of [0.4, 0.15]) {
+          const [retry] = packExchange(job.exchange, cal, target * shrink, ceiling * shrink);
+          if (!retry) break;
+          try {
+            const out = await run(opts.redact ? { ...retry, state: redactDeep(retry.state) } : retry);
+            limiter.recover();
+            cal.observe(JSON.stringify(retry.state).length + questionChars, out.inputTokens);
+            return out;
+          } catch (inner) {
+            if (!isContextOverflow(inner)) throw inner;
+          }
+        }
+        throw e;
+      }
     },
     (result, error, i) => {
       done += 1;

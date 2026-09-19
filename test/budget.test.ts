@@ -97,10 +97,18 @@ describe('calibrator', () => {
   test('tightens the divisor toward what the gateway actually reported', () => {
     const cal = new TokenCalibrator();
     const before = cal.charsPerToken;
-    // Reported usage implies 2.5 chars/token: denser than the 3.7 default.
-    cal.observe(1000, 400);
+    // Report usage denser than whatever the default is, so the test does not
+    // silently stop testing anything when the default changes.
+    cal.observe(1000, Math.ceil(1000 / (before * 0.5)));
     expect(cal.charsPerToken).toBeLessThan(before);
     expect(cal.estimate(1000)).toBeGreaterThan(1000 / before);
+  });
+
+  test('never drifts looser than the densest reading seen', () => {
+    const cal = new TokenCalibrator();
+    cal.observe(1000, 1000); // 1.0 chars/token
+    cal.observe(1000, 100); // 10 chars/token - must not relax the estimate
+    expect(cal.charsPerToken).toBeLessThanOrEqual(1.0);
   });
 
   test('ignores nonsense observations', () => {

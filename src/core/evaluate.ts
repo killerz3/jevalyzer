@@ -147,6 +147,16 @@ export class RateLimiter {
   }
 }
 
+/**
+ * The state was too big for the model's context. Measured on real data: JSON
+ * state of code and tool output runs near 1.1 chars/token, not the ~3.7 of
+ * prose, so a first-run estimate can be out by 3x and overshoot.
+ */
+export function isContextOverflow(e: unknown): boolean {
+  const msg = e instanceof Error ? e.message : String(e);
+  return /max_tokens_exceeded|context length|too many tokens|maximum context/i.test(msg);
+}
+
 export function isRateLimit(e: unknown): boolean {
   const msg = e instanceof Error ? e.message : String(e);
   return /429|rate.?limit|RateLimitError|too many requests/i.test(msg);

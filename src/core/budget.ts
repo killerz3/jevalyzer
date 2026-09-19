@@ -59,8 +59,20 @@ export interface Packed {
 
 /** Calibrates chars-per-token against usage actually reported by the gateway. */
 export class TokenCalibrator {
-  private ratio = 3.7;
+  private ratio: number;
   private samples = 0;
+
+  /**
+   * The default is deliberately pessimistic. Packed state is JSON full of code,
+   * paths and tool output, which measured at ~1.1 chars/token against real
+   * responses - nothing like the ~3.7 of English prose. Starting at 3.7 made
+   * the first run of every fresh install overshoot the context window.
+   */
+  private densest = Infinity;
+
+  constructor(initial = 1.6) {
+    this.ratio = initial;
+  }
 
   estimate(chars: number): number {
     return estimateTokens(chars, this.ratio);
@@ -70,10 +82,13 @@ export class TokenCalibrator {
     if (actualTokens <= 0 || chars <= 0) return;
     const observed = chars / actualTokens;
     this.samples += 1;
-    // Running mean, biased toward safety: never let the divisor drift above
-    // what we have actually seen, or we will under-count and overflow.
+    // Clamp to the DENSEST reading ever seen, not merely the current one.
+    // Clamping against the current observation let a single sparse exchange
+    // pull the running mean back up, which then under-counts every later
+    // exchange and overflows the context again.
+    this.densest = Math.min(this.densest, observed);
     this.ratio = this.ratio + (observed - this.ratio) / Math.min(this.samples, 50);
-    this.ratio = Math.min(this.ratio, observed);
+    this.ratio = Math.min(this.ratio, this.densest);
   }
 
   get charsPerToken(): number {
