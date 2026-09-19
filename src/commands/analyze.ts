@@ -62,6 +62,15 @@ export async function analyze(opts: AnalyzeOptions): Promise<AnalyzeResult> {
   let exchanges = allExchanges(scans, opts.includeSidechains);
   if (!opts.quiet) process.stderr.write(' '.repeat(40) + '\r');
 
+  // A full scan is the only moment we know the complete set of live exchange
+  // ids, so it is the only safe moment to drop orphans left by adapter fixes.
+  if (!opts.source?.length && !opts.limit) {
+    const pruned = store.prune(new Set(allExchanges(scans, true).map((e) => e.id)));
+    if (pruned && !opts.quiet) {
+      console.log(c.dim(`Dropped ${num(pruned)} evaluation(s) for exchanges that no longer exist.`));
+    }
+  }
+
   const skipped = exchanges.filter((e) => cached.has(e.id)).length;
   exchanges = exchanges.filter((e) => !cached.has(e.id));
   if (opts.limit != null) exchanges = exchanges.slice(0, opts.limit);

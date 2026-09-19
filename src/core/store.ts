@@ -196,6 +196,31 @@ export class Store {
     return row ? (JSON.parse(row.payload) as Partial<Exchange>) : null;
   }
 
+  /**
+   * Drop evaluations for exchanges that no longer exist.
+   *
+   * Exchange ids are content hashes including the turn index, so an adapter fix
+   * that removes or renumbers turns leaves the old rows orphaned - and they
+   * keep appearing in reports as exchanges that cannot be opened. Only safe
+   * when the caller scanned every source.
+   */
+  prune(validIds: Set<string>): number {
+    const rows = this.db.query('SELECT DISTINCT exchange_id FROM evaluations').all() as {
+      exchange_id: string;
+    }[];
+    const stale = rows.map((r) => r.exchange_id).filter((id) => !validIds.has(id));
+    if (stale.length === 0) return 0;
+    this.transaction(() => {
+      const del = this.db.query('DELETE FROM evaluations WHERE exchange_id = ?');
+      const delEx = this.db.query('DELETE FROM exchanges WHERE exchange_id = ?');
+      for (const id of stale) {
+        del.run(id);
+        delEx.run(id);
+      }
+    });
+    return stale.length;
+  }
+
   count(): number {
     const r = this.db.query('SELECT COUNT(*) AS n FROM evaluations').get() as { n: number };
     return r.n;
