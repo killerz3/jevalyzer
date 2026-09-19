@@ -1,5 +1,6 @@
 import { experimental_evaluate as evaluate, type Experimental_EvaluationModel } from 'ai';
 import type { Packed } from './budget.ts';
+import { isZdrUnavailable } from './provider.ts';
 import { QUESTIONS } from './questions.ts';
 import type { StoredAnswer } from './store.ts';
 
@@ -14,6 +15,8 @@ export interface EvaluateOptions {
   /** Gateway-only option; harmless and ignored on the direct TypeSafe route. */
   zeroDataRetention: boolean;
   maxRetries?: number;
+  /** Called once if ZDR had to be given up, so the caller can say so. */
+  onZdrDisabled?: () => void;
 }
 
 export interface EvaluationOutcome {
@@ -43,18 +46,34 @@ function confidenceOf(meta: unknown): number | null {
 
 export function makeEvaluator(opts: EvaluateOptions) {
   const model = opts.model;
+  // Zero data retention is a paid-plan feature. Rather than failing every
+  // request on a hobby key, give it up once, tell the caller, and carry on.
+  let useZdr = opts.zeroDataRetention;
 
   return async function run(packed: Packed, signal?: AbortSignal): Promise<EvaluationOutcome> {
-    const result = await evaluate({
-      model,
-      state: packed.state as unknown as Parameters<typeof evaluate>[0]["state"],
-      questions: QUESTIONS,
-      maxRetries: opts.maxRetries ?? 2,
-      abortSignal: signal,
-      ...(opts.zeroDataRetention
-        ? { providerOptions: { gateway: { zeroDataRetention: true } } }
-        : {}),
-    });
+    const call = () =>
+      evaluate({
+        model,
+        state: packed.state as unknown as Parameters<typeof evaluate>[0]['state'],
+        questions: QUESTIONS,
+        maxRetries: opts.maxRetries ?? 2,
+        abortSignal: signal,
+        ...(useZdr ? { providerOptions: { gateway: { zeroDataRetention: true } } } : {}),
+      });
+
+    let result;
+    try {
+      result = await call();
+    } catch (e) {
+      // Retry on the error, not on the flag: requests already in flight when
+      // the flag flipped must still get their second attempt.
+      if (!isZdrUnavailable(e)) throw e;
+      if (useZdr) {
+        useZdr = false;
+        opts.onZdrDisabled?.();
+      }
+      result = await call();
+    }
 
     const answers: Record<string, StoredAnswer> = {};
     for (const [id, a] of Object.entries(result.answers)) {
@@ -72,15 +91,40 @@ export function makeEvaluator(opts: EvaluateOptions) {
 }
 
 /**
- * Token-bucket limiter. Jev allows 1200 requests/minute; staying at 1000 leaves
- * headroom for retries without tripping 429s.
+ * Adaptive token-bucket limiter.
+ *
+ * Jev's documented ceiling is 1200 requests/minute, but that is the paid rate -
+ * a free-tier key is throttled far below it and the real limit is not published
+ * anywhere. So rather than guessing a constant, this starts optimistic, halves
+ * on every rate-limit rejection, and creeps back up while requests succeed.
  */
 export class RateLimiter {
   private tokens: number;
   private last = Date.now();
+  private perMinute: number;
+  private readonly ceiling: number;
 
-  constructor(private perMinute = 1000) {
-    this.tokens = perMinute;
+  constructor(perMinute = 1000, private floor = 6) {
+    this.perMinute = perMinute;
+    this.ceiling = perMinute;
+    this.tokens = Math.min(perMinute, 8);
+  }
+
+  /** Called when the gateway pushes back. */
+  penalize(): void {
+    this.perMinute = Math.max(this.floor, Math.floor(this.perMinute / 2));
+    this.tokens = 0;
+  }
+
+  /** Called on success, to drift back toward the ceiling. */
+  recover(): void {
+    if (this.perMinute < this.ceiling) {
+      this.perMinute = Math.min(this.ceiling, Math.ceil(this.perMinute * 1.08) + 1);
+    }
+  }
+
+  get rate(): number {
+    return this.perMinute;
   }
 
   async take(): Promise<void> {
@@ -101,9 +145,20 @@ export class RateLimiter {
   }
 }
 
+export function isRateLimit(e: unknown): boolean {
+  const msg = e instanceof Error ? e.message : String(e);
+  return /429|rate.?limit|RateLimitError|too many requests/i.test(msg);
+}
+
 export function isRetryable(e: unknown): boolean {
   const msg = e instanceof Error ? e.message : String(e);
-  return /429|529|rate.?limit|overloaded|ECONNRESET|timeout|fetch failed/i.test(msg);
+  return isRateLimit(e) || /529|overloaded|ECONNRESET|timeout|fetch failed/i.test(msg);
+}
+
+export interface PoolHooks {
+  /** Fired before each retry so callers can throttle a shared limiter. */
+  onRateLimit?: () => void;
+  maxAttempts?: number;
 }
 
 /** Run tasks with bounded concurrency, retrying the retryable ones. */
@@ -112,7 +167,9 @@ export async function pool<T, R>(
   concurrency: number,
   worker: (item: T, index: number) => Promise<R>,
   onDone?: (result: R | null, error: unknown, index: number) => void,
+  hooks: PoolHooks = {},
 ): Promise<void> {
+  const maxAttempts = hooks.maxAttempts ?? 8;
   let next = 0;
   const runners = Array.from({ length: Math.max(1, Math.min(concurrency, items.length)) }, async () => {
     for (;;) {
@@ -125,8 +182,13 @@ export async function pool<T, R>(
           onDone?.(r, null, i);
           break;
         } catch (e) {
-          if (attempt < 4 && isRetryable(e)) {
-            await Bun.sleep(250 * 2 ** attempt + Math.random() * 200);
+          if (attempt < maxAttempts && isRetryable(e)) {
+            // Rate limits need seconds, not milliseconds, and a shared signal
+            // so every worker slows down rather than just this one.
+            const rateLimited = isRateLimit(e);
+            if (rateLimited) hooks.onRateLimit?.();
+            const base = rateLimited ? 2000 : 250;
+            await Bun.sleep(Math.min(45_000, base * 2 ** attempt) + Math.random() * 500);
             attempt += 1;
             continue;
           }

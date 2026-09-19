@@ -76,10 +76,20 @@ export async function resolveProvider(args: ResolveArgs): Promise<Resolved> {
   throw new Error('no-key');
 }
 
-/** Vercel gates every Gateway request on a card, even for free models. */
+/**
+ * Vercel gates every Gateway request on a card, even for free models. Match the
+ * card requirement specifically - plenty of unrelated errors mention "billing"
+ * only because they link to the billing settings page.
+ */
 export function isBillingBlock(e: unknown): boolean {
   const msg = e instanceof Error ? e.message : String(e);
-  return /credit card|payment method|billing|add a card/i.test(msg);
+  return /valid credit card|credit card on file|add a card|payment method/i.test(msg);
+}
+
+/** Zero data retention is a paid-plan feature; hobby keys are refused outright. */
+export function isZdrUnavailable(e: unknown): boolean {
+  const msg = e instanceof Error ? e.message : String(e);
+  return /zero data retention|\bZDR\b/i.test(msg);
 }
 
 export const BILLING_HELP = `

@@ -41,7 +41,7 @@ program
   .option('-l, --limit <n>', 'only analyze the first N exchanges', (v) => parseInt(v, 10))
   .option('--dry-run', 'show exactly what would be sent, and send nothing')
   .option('--budget <usd>', 'refuse to exceed this spend', (v) => parseFloat(v), 5)
-  .option('--concurrency <n>', 'parallel requests', (v) => parseInt(v, 10), 20)
+  .option('--concurrency <n>', 'parallel requests', (v) => parseInt(v, 10), 4)
   .option('--model <id>', 'evaluation model (default depends on --backend)')
   .option('--backend <name>', 'gateway | typesafe (default: whichever key you have)')
   .option('--api-key <key>', 'API key for the chosen backend (else env, else config)')

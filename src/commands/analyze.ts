@@ -143,8 +143,17 @@ export async function analyze(opts: AnalyzeOptions): Promise<void> {
     }
   }
 
-  const run = makeEvaluator({ model: provider.model, zeroDataRetention: opts.zdr });
-  const limiter = new RateLimiter(1000);
+  let zdrGivenUp = false;
+  const run = makeEvaluator({
+    model: provider.model,
+    zeroDataRetention: opts.zdr,
+    onZdrDisabled: () => {
+      zdrGivenUp = true;
+    },
+  });
+  // Start well below the documented paid ceiling; the limiter finds the real
+  // rate from the gateway's pushback rather than assuming one.
+  const limiter = new RateLimiter(120);
 
   // Segments of one split exchange are merged before being stored.
   const merged = new Map<string, { answers: Record<string, StoredAnswer>[]; tokens: number; conf: number[] }>();
@@ -152,12 +161,13 @@ export async function analyze(opts: AnalyzeOptions): Promise<void> {
   let failed = 0;
   let actualTokens = 0;
   const started = Date.now();
-  const failures: string[] = [];
+  /** Distinct failure message -> how many times it happened. */
+  const failures = new Map<string, number>();
 
   const tick = () => {
     const pct = Math.round((done / jobs.length) * 100);
     process.stderr.write(
-      `\r${c.cyan('scoring')} ${done}/${jobs.length} (${pct}%)  ${failed ? c.yellow(`${failed} failed`) : ''}   `,
+      `\r${c.cyan('scoring')} ${done}/${jobs.length} (${pct}%)  ${c.dim(`${limiter.rate}/min`)}  ${failed ? c.yellow(`${failed} failed`) : ''}   `,
     );
   };
 
@@ -167,6 +177,7 @@ export async function analyze(opts: AnalyzeOptions): Promise<void> {
     async (job) => {
       await limiter.take();
       const out = await run(job.packed);
+      limiter.recover();
       cal.observe(JSON.stringify(job.packed.state).length, out.inputTokens);
       return out;
     },
@@ -175,9 +186,8 @@ export async function analyze(opts: AnalyzeOptions): Promise<void> {
       const job = jobs[i]!;
       if (error || !result) {
         failed += 1;
-        if (failures.length < 5) {
-          failures.push(error instanceof Error ? error.message : String(error));
-        }
+        const msg = error instanceof Error ? error.message : String(error);
+        failures.set(msg, (failures.get(msg) ?? 0) + 1);
       } else {
         actualTokens += result.inputTokens;
         const entry = merged.get(job.exchange.id) ?? { answers: [], tokens: 0, conf: [] };
@@ -188,6 +198,7 @@ export async function analyze(opts: AnalyzeOptions): Promise<void> {
       }
       tick();
     },
+    { onRateLimit: () => limiter.penalize() },
   );
   process.stderr.write('\r' + ' '.repeat(70) + '\r');
 
@@ -233,8 +244,17 @@ export async function analyze(opts: AnalyzeOptions): Promise<void> {
       `  Token estimate was ${drift >= 0 ? '+' : ''}${drift.toFixed(1)}% off; calibrated to ${cal.charsPerToken.toFixed(2)} chars/token.`,
     ),
   );
-  for (const f of failures) console.log(c.yellow(`  ! ${f}`));
-  if (failures.some(isBillingBlock)) console.log(c.yellow(BILLING_HELP));
+  if (zdrGivenUp) {
+    console.log(
+      c.yellow(
+        '  ! Zero data retention needs a Vercel Pro plan; this run continued without it.',
+      ),
+    );
+  }
+  for (const [msg, count] of [...failures.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5)) {
+    console.log(c.yellow(`  ! ${count}x  ${msg}`));
+  }
+  if ([...failures.keys()].some(isBillingBlock)) console.log(c.yellow(BILLING_HELP));
   console.log(c.dim('\n  Next: ') + 'jevalyzer report --open' + c.dim('  or  ') + 'jevalyzer tui');
   store.close();
 }

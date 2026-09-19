@@ -48,9 +48,16 @@ backends. Whichever one you have credentials for is picked automatically.
 1. Create a key at the [AI Gateway dashboard](https://vercel.com/d?to=/[team]/~/ai-gateway/api-keys)
 2. `jevalyzer auth`, or `export AI_GATEWAY_API_KEY=vck_...`
 
-> Vercel requires a **credit card on file** before the Gateway will serve any
-> request, including free ones. If you would rather not add one, use the direct
-> backend below.
+> Two things to know about the Gateway on a **hobby** plan:
+> - A **credit card must be on file** before it will serve any request, free or not.
+> - Free-tier requests on this model are **rate-limited well below** the
+>   documented 1200/min. Jevalyzer handles this: the limiter starts at 120/min,
+>   halves whenever the gateway pushes back, and creeps back up, so a run gets
+>   slower rather than failing. Adding paid credits removes the throttle.
+> - **Zero data retention needs Pro or Enterprise.** On hobby it is refused, so
+>   Jevalyzer gives it up automatically after the first rejection and says so.
+>
+> If you would rather not add a card, use the direct backend below.
 
 **TypeSafe directly** (`--backend typesafe`, model `jev-latest`)
 
@@ -87,7 +94,8 @@ outside `~/.jevalyzer/`, and no telemetry is sent anywhere.
   contain and sends nothing.
 - `--redact` strips API keys, tokens, JWTs, private keys, emails and your home
   path before sending.
-- Zero data retention is requested by default; `--no-zdr` turns that off.
+- Zero data retention is requested by default, and dropped automatically if your
+  plan does not allow it (the run says so); `--no-zdr` skips asking.
 - `jevalyzer scan`, `report` and `tui` are entirely local.
 
 ## What it measures
