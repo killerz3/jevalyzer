@@ -44,7 +44,7 @@ const n1 = (v: number) => v.toFixed(1);
 
 export async function report(opts: { out: string; open?: boolean }): Promise<void> {
   const store = new Store();
-  const evaluations = store.all(BANK_VERSION);
+  const evaluations = store.best(BANK_VERSION);
 
   if (evaluations.length === 0) {
     console.log(

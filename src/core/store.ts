@@ -189,6 +189,25 @@ export class Store {
     }));
   }
 
+  /**
+   * One row per exchange, preferring the richer profile.
+   *
+   * Once an archive has been scored under both profiles every exchange has two
+   * rows, and reading them all double-counts each one - inflating every n and
+   * every rate. Extensive is a superset of minimal, so it wins.
+   */
+  best(bankVersion?: number): StoredEvaluation[] {
+    const rank: Record<string, number> = { extensive: 2, minimal: 1 };
+    const byExchange = new Map<string, StoredEvaluation>();
+    for (const ev of this.all(bankVersion)) {
+      const held = byExchange.get(ev.exchangeId);
+      if (!held || (rank[ev.bank] ?? 0) > (rank[held.bank] ?? 0)) {
+        byExchange.set(ev.exchangeId, ev);
+      }
+    }
+    return [...byExchange.values()];
+  }
+
   exchange(id: string): Partial<Exchange> | null {
     const row = this.db.query('SELECT payload FROM exchanges WHERE exchange_id = ?').get(id) as
       | { payload: string }

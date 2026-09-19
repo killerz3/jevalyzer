@@ -210,7 +210,7 @@ function Detail({ scored, store }: { scored: Scored; store: Store }) {
 
 export async function tui(): Promise<void> {
   const store = new Store();
-  const evaluations = store.all(BANK_VERSION);
+  const evaluations = store.best(BANK_VERSION);
   if (evaluations.length === 0) {
     console.log('Nothing scored yet. Run: jevalyzer analyze');
     store.close();
