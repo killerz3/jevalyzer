@@ -29,11 +29,28 @@ const QUESTIONS = {
 } as const;
 
 describe('cloudflare jev adapter', () => {
+  test('sends the model in the body with an input wrapper', async () => {
+    const s = stub({ result: { answers: { ok: { noul: 0.9 } } } });
+    await model.doEvaluate({ state: 'x', questions: { ok: QUESTIONS.ok } });
+    // Partner models are POSTed to /ai/run with model+input in the body, not
+    // to /ai/run/<model> with the payload at the top level.
+    expect(s.seen().model).toBe('typesafe/jev');
+    expect(s.seen().input.state).toBe('x');
+  });
+
   test('sends boolean questions as noul', async () => {
     const s = stub({ result: { answers: { ok: { noul: 0.9 } } } });
     await model.doEvaluate({ state: 'x', questions: { ok: QUESTIONS.ok } });
-    expect(s.seen().questions.ok.type).toBe('noul');
-    expect(s.seen().questions.ok.instructions).toBe('Did it work?');
+    expect(s.seen().input.questions.ok.type).toBe('noul');
+    expect(s.seen().input.questions.ok.instructions).toBe('Did it work?');
+  });
+
+  test('an insufficient-balance error is labelled as such', async () => {
+    stub({ success: false, errors: [{ code: 2021, message: 'Insufficient balance' }] }, 200);
+    const err = await model
+      .doEvaluate({ state: 'x', questions: { ok: QUESTIONS.ok } })
+      .then(() => null, (e: Error) => e);
+    expect(err?.message).toContain('balance');
   });
 
   test('maps noul back to a boolean probability', async () => {

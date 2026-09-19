@@ -14,15 +14,17 @@ import type {
  * needs no payment method at all, which is the only way to score a large
  * archive for free.
  *
- * STATUS (2026-09-19): Cloudflare's docs describe `typesafe/jev`, but the model
- * is not in the Workers AI catalogue - a model search returns 65 models with no
- * Jev among them, and every plausible id returns 7000 "No route for that URI".
- * This adapter is kept, and tested against the documented contract, for when the
- * model actually ships; it is never auto-selected until then.
+ * STATUS (2026-09-19): the route works, but partner models like this one are
+ * NOT covered by the free Neurons allocation - a call returns
+ * `2021 Insufficient balance; add money to your gateway or use BYOK`. So this
+ * needs either Cloudflare credit or a TypeSafe key configured as BYOK on the
+ * account's AI Gateway. It is never auto-selected for that reason.
  *
  * There is no AI SDK provider package for this, so this implements the
- * evaluation-model contract directly against Cloudflare's REST API. Two
+ * evaluation-model contract directly against Cloudflare's REST API. Three
  * differences from the AI SDK dialect have to be bridged:
+ *   - Partner models are called as POST /ai/run with `model` and `input` in the
+ *     BODY, not as /ai/run/<model> with the payload at the top level.
  *   - Cloudflare uses TypeSafe's native question type name `noul` where the
  *     AI SDK says `boolean`, and answers come back under `noul` too.
  *   - The context window here is 32k, not the 64k of TypeSafe's own API.
@@ -107,7 +109,7 @@ export interface CloudflareSettings {
 
 export function cloudflareJev(settings: CloudflareSettings): EvaluationModel {
   const modelId = settings.modelId ?? 'typesafe/jev';
-  const url = `https://api.cloudflare.com/client/v4/accounts/${settings.accountId}/ai/run/${modelId}`;
+  const url = `https://api.cloudflare.com/client/v4/accounts/${settings.accountId}/ai/run`;
 
   return {
     specificationVersion: 'v4',
@@ -128,7 +130,10 @@ export function cloudflareJev(settings: CloudflareSettings): EvaluationModel {
           'Content-Type': 'application/json',
           ...(options.headers ?? {}),
         },
-        body: JSON.stringify({ state: options.state, questions }),
+        body: JSON.stringify({
+          model: modelId,
+          input: { state: options.state, questions },
+        }),
         signal: options.abortSignal,
       });
 
@@ -145,8 +150,10 @@ export function cloudflareJev(settings: CloudflareSettings): EvaluationModel {
           body.errors?.map((e) => `${e.code ?? ''} ${e.message ?? ''}`.trim()).join('; ') ||
           text.slice(0, 300);
         // Surface the shapes the retry logic keys off, in its own vocabulary.
-        const prefix =
-          res.status === 429
+        const insufficient = body.errors?.some((e) => e.code === 2021);
+        const prefix = insufficient
+          ? 'balance: '
+          : res.status === 429
             ? 'rate limit: '
             : res.status === 401 || res.status === 403
               ? 'authentication: '

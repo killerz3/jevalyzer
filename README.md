@@ -60,15 +60,19 @@ the one that can finish a large run for free.
 >
 > If you would rather not add a card, use the direct backend below.
 
-**Cloudflare Workers AI** (`--backend cloudflare`) — *implemented, not yet usable*
+**Cloudflare Workers AI** (`--backend cloudflare`, model `typesafe/jev`)
 
-Cloudflare's docs describe `typesafe/jev` on Workers AI, which would mean a free
-daily allocation with no payment method. The adapter is written and tested, but
-as of 2026-09-19 the model is **not in the Workers AI catalogue** — a model
-search returns 65 models with no Jev among them, and every id returns
-`7000 No route for that URI`. It is therefore never auto-selected. If Cloudflare
-ships it, `jevalyzer auth --cloudflare` and `--backend cloudflare` are ready
-(note: 32k context there, not 64k — the packing budget adapts automatically).
+Workers AI serves Jev as a **partner model**, which means it is *outside* the
+free Neurons allocation: a call returns `2021 Insufficient balance; add money to
+your gateway or use BYOK`. It needs either Cloudflare credit, or your own
+TypeSafe key configured as BYOK on the account's AI Gateway. For that reason it
+is never auto-selected.
+
+1. `jevalyzer auth --cloudflare` — asks for your account id and an API token
+2. Or `export CLOUDFLARE_ACCOUNT_ID=... CLOUDFLARE_API_TOKEN=...`
+3. `jevalyzer analyze --backend cloudflare`
+
+Context there is **32k**, not 64k; the packing budget adapts automatically.
 
 **TypeSafe directly** (`--backend typesafe`, model `jev-latest`)
 

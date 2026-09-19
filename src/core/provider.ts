@@ -75,10 +75,9 @@ export async function resolveProvider(args: ResolveArgs): Promise<Resolved> {
     cfg.cloudflareApiToken;
   const cfReady = Boolean(cfAccount && cfToken);
 
-  // Cloudflare is NOT auto-selected: its docs list typesafe/jev, but the model
-  // is absent from the Workers AI catalogue and every model id returns 7000 "No
-  // route for that URI". The adapter is kept and tested for when it ships, but
-  // it must be asked for explicitly rather than silently breaking a run.
+  // Cloudflare is NOT auto-selected: partner models are outside the free
+  // Neurons allocation and return 2021 "Insufficient balance" without either
+  // Cloudflare credit or a BYOK key on the account's AI Gateway.
   const chosen: Backend | null =
     args.backend ?? (gatewayKey ? 'gateway' : typesafeKey ? 'typesafe' : cfReady ? 'cloudflare' : null);
 
