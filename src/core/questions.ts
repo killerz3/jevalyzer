@@ -8,10 +8,24 @@ import type { Experimental_EvaluationQuestion as Question } from 'ai';
  * Bump BANK_VERSION whenever wording changes: cached answers are keyed on it,
  * so a reworded rubric re-evaluates instead of silently mixing scales.
  */
-export const BANK_VERSION = 1;
+export const BANK_VERSION = 2;
 
 /** Score questions return a fractional index into their criteria array. */
 export const QUESTIONS = {
+  // --- what kind of exchange is this at all? -------------------------------
+  // Without this, a greeting gets judged against a task rubric and scores as
+  // "stopped-short" for not having delivered anything.
+  exchangeKind: {
+    type: 'choice',
+    instructions: 'What was the user actually doing in this message?',
+    criteria: {
+      task: 'Asking for work to be done - write, fix, change, run something',
+      question: 'Asking for information or an explanation, with no work requested',
+      chitchat: 'Greeting, thanks, acknowledgement, or small talk',
+      meta: 'Steering the conversation itself - stop, wait, never mind, a slash command',
+    },
+  },
+
   // --- quality -------------------------------------------------------------
   correctness: {
     type: 'score',

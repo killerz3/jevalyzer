@@ -45,6 +45,9 @@ const NEGATIVE_REACTIONS = new Set(['corrected', 'frustrated', 'abandoned']);
 export interface Scored {
   ev: StoredEvaluation;
   score: number;
+  kind: string;
+  /** Greetings and meta turns are shown, but never scored against a task rubric. */
+  substantive: boolean;
   parts: {
     correctness: number;
     adherence: number;
@@ -63,6 +66,10 @@ export interface Scored {
 /** The headline 0-100 Jevalyzer Score for one exchange. */
 export function scoreExchange(ev: StoredEvaluation): Scored {
   const a = ev.answers as Record<QuestionId, StoredAnswer | undefined>;
+
+  const kind = choice(a.exchangeKind) ?? 'task';
+  // A greeting is not a task, and must not be judged against a task rubric.
+  const substantive = kind === 'task' || kind === 'question';
 
   const correctness = scoreFrac('correctness', a.correctness) ?? 0.5;
 
@@ -115,12 +122,14 @@ export function scoreExchange(ev: StoredEvaluation): Scored {
   flag('wastedToolCalls', 'wasted tool calls');
   flag('overHedging', 'over-hedged');
   flag('unnecessarySelfCorrection', 'needless self-correction');
-  if (outcome && outcome !== 'delivered') issues.push(outcome);
+  if (substantive && outcome && outcome !== 'delivered') issues.push(outcome);
   const scope = choice(a.scopeDeviation);
   if (scope && scope !== 'none') issues.push(`scope ${scope}`);
 
   return {
     ev,
+    kind,
+    substantive,
     score: Math.max(0, Math.min(100, score)),
     parts: { correctness, adherence, outcome: outcomeCredit, efficiency, communication, issuePenalty },
     issues,
@@ -147,12 +156,17 @@ export interface GroupStats {
   sessionCostUsd: number;
 }
 
+/**
+ * Aggregate. Only substantive exchanges count toward the rates - a model does
+ * not get a worse delivery rate because you said hello to it.
+ */
 export function groupBy(
   scored: Scored[],
   keyOf: (s: Scored) => string | null,
 ): GroupStats[] {
   const groups = new Map<string, Scored[]>();
   for (const s of scored) {
+    if (!s.substantive) continue;
     const k = keyOf(s);
     if (!k) continue;
     const list = groups.get(k) ?? [];

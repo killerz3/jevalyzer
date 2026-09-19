@@ -114,6 +114,7 @@ describe('calibrator', () => {
 
 describe('question bank', () => {
   test('asks for every dimension in one request', () => {
-    expect(QUESTION_IDS.length).toBe(20);
+    expect(QUESTION_IDS.length).toBe(21);
+    expect(QUESTION_IDS).toContain('exchangeKind');
   });
 });
