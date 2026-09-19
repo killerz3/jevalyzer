@@ -4,9 +4,10 @@
   "description": "Grade your Claude Code, Codex, opencode, Gemini CLI and Antigravity sessions with Jev",
   "type": "module",
   "bin": {
-    "jevalyzer": "./src/cli.ts"
+    "jevalyzer": "./bin/jevalyzer.mjs"
   },
   "files": [
+    "bin",
     "src",
     "README.md",
     "LICENSE"
@@ -18,7 +19,8 @@
     "jevalyzer": "bun run src/cli.ts",
     "build": "bun build --compile --minify src/cli.ts --outfile dist/jevalyzer",
     "typecheck": "tsc --noEmit",
-    "test": "bun test"
+    "test": "bun test",
+    "prepublishOnly": "bun run typecheck && bun test"
   },
   "license": "MIT",
   "dependencies": {
@@ -33,5 +35,27 @@
     "@types/bun": "^1.4.2",
     "@types/react": "^19.3.0",
     "typescript": "^7.0.2"
+  },
+  "keywords": [
+    "jev",
+    "typesafe",
+    "claude-code",
+    "codex",
+    "opencode",
+    "gemini-cli",
+    "antigravity",
+    "ai-agent",
+    "llm-evaluation",
+    "cli",
+    "transcript-analysis",
+    "bun"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/USER/jevalyzer.git"
+  },
+  "homepage": "https://github.com/USER/jevalyzer#readme",
+  "bugs": {
+    "url": "https://github.com/USER/jevalyzer/issues"
   }
 }
