@@ -379,7 +379,16 @@ export async function report(opts: { out: string; open?: boolean }): Promise<voi
     } and ${byModel.length} models, scored with typesafe-ai/jev.`,
     tiles: [
       { n: n1(overall), k: 'Mean Jevalyzer Score' },
-      { n: prefs[0]?.model ?? '-', k: 'Preferred model' },
+      // The hero number must not be driven by a handful of exchanges: take the
+      // top model that actually has enough evidence behind it.
+      (() => {
+        const solid = prefs.filter((p) => p.reliable && p.n >= 25);
+        const pick = solid[0] ?? prefs.find((p) => p.reliable) ?? prefs[0];
+        return {
+          n: pick?.model ?? '-',
+          k: pick ? `Preferred model  ·  n=${pick.n}` : 'Preferred model',
+        };
+      })(),
       { n: String(issueCount), k: 'Issues found' },
       { n: `${n1(scored.filter((s) => s.outcome === 'delivered').length / scored.length * 100)}%`, k: 'Delivered' },
       { n: usd((spend / 1e6) * JEV_INPUT_USD_PER_MTOK), k: 'Cost to analyse' },
