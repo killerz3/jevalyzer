@@ -1,0 +1,27 @@
+{
+  "name": "jevalyzer",
+  "version": "0.1.0",
+  "description": "Grade your Claude Code, Codex, opencode, Gemini CLI and Antigravity sessions with Jev",
+  "type": "module",
+  "bin": {
+    "jevalyzer": "./src/cli.ts"
+  },
+  "files": ["src", "README.md", "LICENSE"],
+  "engines": {
+    "bun": ">=1.2.0"
+  },
+  "scripts": {
+    "jevalyzer": "bun run src/cli.ts",
+    "build": "bun build --compile --minify src/cli.ts --outfile dist/jevalyzer",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "@ai-sdk/gateway": "^4.0.87",
+    "ai": "7.0.105",
+    "commander": "^15.0.0",
+    "ink": "^7.1.1",
+    "react": "^19.3.0"
+  }
+}
