@@ -24,6 +24,8 @@ export interface Preference {
   model: string;
   n: number;
   index: number;
+  /** True when too few models are being compared for a spread to mean much. */
+  thinComparison?: boolean;
   /** 0-100 presentation of the index, relative to the models compared. */
   rank: number;
   components: PreferenceComponent[];
@@ -128,18 +130,27 @@ export function preferences(
       n: r.n,
       index,
       rank: 0,
+      thinComparison: raw.length < 3,
       components,
       reliable: r.n >= minSample,
     };
   });
 
-  // Map the index onto 0-100 across the models being compared, so the scale is
-  // readable without pretending it is an absolute measurement.
+  // Map the index onto 0-100. Min-max scaling is only honest with enough models
+  // to spread across it: with two, it pins one to 100 and the other to 0 no
+  // matter how close they actually are, which reads as a rout rather than the
+  // near-tie it may be. Below three models, map the raw index through a fixed
+  // scale centred on 50 so the gap shown is the gap measured.
   const idx = prefs.map((p) => p.index);
   const lo = Math.min(...idx);
   const hi = Math.max(...idx);
+  const degenerate = prefs.length < 3;
   for (const p of prefs) {
-    p.rank = hi === lo ? 50 : ((p.index - lo) / (hi - lo)) * 100;
+    p.rank = degenerate
+      ? Math.max(0, Math.min(100, 50 + p.index * 25))
+      : hi === lo
+        ? 50
+        : ((p.index - lo) / (hi - lo)) * 100;
   }
 
   return prefs.sort((a, b) => b.index - a.index);

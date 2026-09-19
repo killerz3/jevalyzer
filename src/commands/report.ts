@@ -78,10 +78,16 @@ export async function report(opts: { out: string; open?: boolean }): Promise<voi
     })),
     { max: 100 },
   );
+  const thin = prefs.some((p) => p.thinComparison);
+  const small = prefs.filter((p) => !p.reliable).length;
   sections.push(
     card(
       'Which model you actually prefer',
-      'Not mean quality: a blend of how often the work landed, how often you had to correct or re-ask, how frustrated you sounded, how many exchanges a session took, risky actions, and recency-weighted use. Scaled 0-100 across the models compared, so it ranks them against each other rather than claiming an absolute.',
+      'Not mean quality: a blend of how often the work landed, how often you had to correct or re-ask, how frustrated you sounded, how many exchanges a session took, risky actions, and recency-weighted use.' +
+        (thin
+          ? ` Only ${prefs.length} model(s) here, which is too few to rank meaningfully - the bars show the raw index around a midpoint of 50 rather than a spread, and a small gap means a small gap.`
+          : ' Scaled 0-100 across the models compared, so it ranks them against each other rather than claiming an absolute.') +
+        (small ? ` ${small} model(s) have fewer than 5 exchanges and are marked accordingly.` : ''),
       withTable(prefChart, {
         headers: ['Model', 'Index', 'Delivered', 'Not corrected', 'Calm', 'No risk', 'Recent share', 'n'],
         numeric: [false, true, true, true, true, true, true, true],

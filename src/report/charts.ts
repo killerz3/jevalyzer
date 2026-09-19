@@ -183,6 +183,28 @@ export interface StackRow {
   segments: { key: string; value: number; slot: number }[];
 }
 
+/**
+ * Round percentages so they still sum to 100. Rounding each independently
+ * produces rows like "88% + 13%", which reads as an arithmetic error.
+ */
+function largestRemainder(values: number[]): number[] {
+  const total = values.reduce((a, b) => a + b, 0);
+  if (total <= 0) return values.map(() => 0);
+  const exact = values.map((v) => (v / total) * 100);
+  const floors = exact.map((v) => Math.floor(v));
+  let deficit = 100 - floors.reduce((a, b) => a + b, 0);
+  const order = exact
+    .map((v, i) => ({ i, frac: v - Math.floor(v) }))
+    .sort((a, b) => b.frac - a.frac);
+  const out = [...floors];
+  for (const { i } of order) {
+    if (deficit <= 0) break;
+    out[i] = (out[i] ?? 0) + 1;
+    deficit -= 1;
+  }
+  return out;
+}
+
 /** Stacked bars with a 2px surface gap between segments, never a border. */
 export function stacked(rows: StackRow[], opts: { width?: number } = {}): string {
   if (!rows.length) return emptyState();
@@ -198,18 +220,19 @@ export function stacked(rows: StackRow[], opts: { width?: number } = {}): string
       const total = r.segments.reduce((a, s) => a + s.value, 0) || 1;
       let x = labelW;
       const y = i * rowH + 8;
-      const segs = r.segments
-        .filter((s) => s.value > 0)
-        .map((s) => {
+      const shown = r.segments.filter((s) => s.value > 0);
+      const pcts = largestRemainder(shown.map((s) => s.value));
+      const segs = shown
+        .map((s, si) => {
           const segW = Math.max(0, (s.value / total) * plotW - 2);
-          const pct = (s.value / total) * 100;
+          const pct = pcts[si] ?? 0;
           const el =
             `<g class="seg ${SERIES[s.slot] ?? 's1'}" tabindex="0" data-tip="${esc(
-              `${r.label} - ${s.key}: ${fmt(pct, 0)}% (${s.value})`,
+              `${r.label} - ${s.key}: ${pct}% (${s.value})`,
             )}">` +
             `<rect x="${x}" y="${y}" width="${segW}" height="22" rx="3"/>` +
             (segW > 34
-              ? `<text class="seglabel" x="${x + segW / 2}" y="${y + 15}" text-anchor="middle">${fmt(pct, 0)}%</text>`
+              ? `<text class="seglabel" x="${x + segW / 2}" y="${y + 15}" text-anchor="middle">${pct}%</text>`
               : '') +
             `</g>`;
           x += segW + 2;
