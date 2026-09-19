@@ -1,6 +1,6 @@
 import type { Exchange, SourceId } from '../adapters/types.ts';
 import { allExchanges, scanSources } from '../adapters/registry.ts';
-import { TokenCalibrator, packExchange, type Packed } from '../core/budget.ts';
+import { TokenCalibrator, budgetFor, packExchange, type Packed } from '../core/budget.ts';
 import { SETUP_HELP } from '../core/config.ts';
 import { BILLING_HELP, isBillingBlock, resolveProvider, type Backend } from '../core/provider.ts';
 import { JEV_FREE_UNTIL, JEV_INPUT_USD_PER_MTOK, jevCost } from '../core/cost.ts';
@@ -55,10 +55,30 @@ export async function analyze(opts: AnalyzeOptions): Promise<void> {
     return;
   }
 
+  // The provider is resolved first because the context window - and therefore
+  // how aggressively each exchange must be packed - depends on the route.
+  let provider;
+  try {
+    provider = await resolveProvider({
+      backend: opts.backend,
+      apiKey: opts.apiKey,
+      model: opts.model,
+    });
+  } catch (e) {
+    if (!opts.dryRun) {
+      console.log(c.yellow(e instanceof Error && e.message === 'no-key' ? SETUP_HELP : String(e)));
+      store.close();
+      process.exitCode = 1;
+      return;
+    }
+    provider = null;
+  }
+
+  const { target, ceiling } = budgetFor(provider?.contextTokens ?? 64_000);
   const cal = new TokenCalibrator();
   const jobs: Job[] = [];
   for (const e of exchanges) {
-    for (const packed of packExchange(e, cal)) {
+    for (const packed of packExchange(e, cal, target, ceiling)) {
       jobs.push({
         exchange: e,
         packed: opts.redact
@@ -89,11 +109,14 @@ export async function analyze(opts: AnalyzeOptions): Promise<void> {
     console.log(c.dim(`state (${num(sample.packed.estimatedTokens)} est. tokens, ladder: ${sample.packed.applied.join(', ') || 'none applied'})`));
     console.log(JSON.stringify(sample.packed.state, null, 2).slice(0, 4000));
     console.log(c.dim(`\nplus ${QUESTION_IDS.length} questions, answered in one round trip.`));
-    const over = jobs.filter((j) => j.packed.estimatedTokens > 60_000);
+    const over = jobs.filter((j) => j.packed.estimatedTokens > ceiling);
     console.log(
       over.length
-        ? c.red(`\n${over.length} packed state(s) exceed the 60k ceiling - that is a packer bug.`)
-        : c.green(`\nAll ${num(jobs.length)} packed states are within the 60k ceiling. Nothing was sent.`),
+        ? c.red(`\n${over.length} packed state(s) exceed the ${num(ceiling)} ceiling - that is a packer bug.`)
+        : c.green(
+            `\nAll ${num(jobs.length)} packed states are within the ${num(ceiling)}-token ceiling` +
+              `${provider ? ` for ${provider.backend}` : ''}. Nothing was sent.`,
+          ),
     );
     store.close();
     return;
@@ -105,20 +128,6 @@ export async function analyze(opts: AnalyzeOptions): Promise<void> {
         `\nEstimated ${usd(estCost)} exceeds --budget ${usd(opts.budget)}. Raise the budget or use --limit.`,
       ),
     );
-    store.close();
-    process.exitCode = 1;
-    return;
-  }
-
-  let provider;
-  try {
-    provider = await resolveProvider({
-      backend: opts.backend,
-      apiKey: opts.apiKey,
-      model: opts.model,
-    });
-  } catch (e) {
-    console.log(c.yellow(e instanceof Error && e.message === 'no-key' ? SETUP_HELP : String(e)));
     store.close();
     process.exitCode = 1;
     return;
@@ -136,9 +145,7 @@ export async function analyze(opts: AnalyzeOptions): Promise<void> {
     );
     console.log(
       c.dim(
-        `Key from ${provider.keySource} (${provider.backend}, ${provider.modelId}). Transcript text will be sent to ${
-          provider.backend === 'gateway' ? 'the Vercel AI Gateway' : 'api.typesafe.ai'
-        }.`,
+        `Key from ${provider!.keySource} (${provider!.backend}, ${provider!.modelId}). Transcript text will be sent to ${provider!.destination}.`,
       ),
     );
     const answer = prompt('Continue? [y/N]') ?? '';
@@ -151,7 +158,7 @@ export async function analyze(opts: AnalyzeOptions): Promise<void> {
 
   let zdrGivenUp = false;
   const run = makeEvaluator({
-    model: provider.model,
+    model: provider!.model,
     zeroDataRetention: opts.zdr,
     onZdrDisabled: () => {
       zdrGivenUp = true;

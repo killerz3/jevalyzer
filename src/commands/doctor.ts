@@ -33,7 +33,16 @@ export async function doctor(opts: { probe?: boolean; backend?: Backend }): Prom
   console.log(
     tsKey ? ok(`TypeSafe key: ${maskKey(tsKey)}`) : c.dim('--   no direct TypeSafe key'),
   );
-  if (!key && !tsKey) console.log(warn('no credentials at all - run: jevalyzer auth'));
+  const cfReady = Boolean(
+    (process.env.CLOUDFLARE_ACCOUNT_ID ?? cfg.cloudflareAccountId) &&
+      (process.env.CLOUDFLARE_API_TOKEN ?? cfg.cloudflareApiToken),
+  );
+  console.log(
+    cfReady
+      ? ok('Cloudflare Workers AI credentials present (free daily allocation)')
+      : c.dim('--   no Cloudflare credentials'),
+  );
+  if (!key && !tsKey && !cfReady) console.log(warn('no credentials at all - run: jevalyzer auth'));
   console.log(c.dim(`     config: ${path}`));
 
   console.log(c.bold('\nSession sources'));
@@ -74,7 +83,9 @@ export async function doctor(opts: { probe?: boolean; backend?: Backend }): Prom
     console.log(warn('skipped: no API key'));
     return;
   }
-  console.log(c.dim(`     via ${provider.backend} (${provider.modelId})`));
+  console.log(
+    c.dim(`     via ${provider.backend} (${provider.modelId}, ${provider.contextTokens / 1000}k context)`),
+  );
   try {
     const t0 = Date.now();
     const result = await evaluate({

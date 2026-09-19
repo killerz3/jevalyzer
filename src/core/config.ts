@@ -11,6 +11,9 @@ export interface Config {
   apiKey?: string;
   /** Direct TypeSafe key, used when the gateway route is unavailable. */
   typesafeApiKey?: string;
+  /** Cloudflare Workers AI: free daily allocation, no payment method needed. */
+  cloudflareAccountId?: string;
+  cloudflareApiToken?: string;
   model?: string;
 }
 

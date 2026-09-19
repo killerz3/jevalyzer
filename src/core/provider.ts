@@ -1,6 +1,7 @@
 import { createGateway } from '@ai-sdk/gateway';
 import { createTypeSafeAi } from '@ai-sdk/typesafe-ai';
 import type { Experimental_EvaluationModel } from 'ai';
+import { CLOUDFLARE_CONTEXT_TOKENS, cloudflareJev } from './cloudflare.ts';
 import { readConfig } from './config.ts';
 
 /**
@@ -16,18 +17,37 @@ import { readConfig } from './config.ts';
  * wins unless --backend says otherwise.
  */
 
-export type Backend = 'gateway' | 'typesafe';
+export type Backend = 'gateway' | 'typesafe' | 'cloudflare';
+export const BACKENDS: Backend[] = ['gateway', 'typesafe', 'cloudflare'];
 
 export interface Resolved {
   backend: Backend;
   model: Experimental_EvaluationModel;
   modelId: string;
   keySource: string;
+  /** Usable state budget, which differs per route. */
+  contextTokens: number;
+  /** Where the transcript text actually goes, for the confirmation line. */
+  destination: string;
 }
 
 export const DEFAULT_MODEL: Record<Backend, string> = {
   gateway: 'typesafe-ai/jev',
   typesafe: 'jev-latest',
+  cloudflare: 'typesafe/jev',
+};
+
+/** TypeSafe's own API allows 64k; Cloudflare's deployment allows 32k. */
+const CONTEXT: Record<Backend, number> = {
+  gateway: 64_000,
+  typesafe: 64_000,
+  cloudflare: CLOUDFLARE_CONTEXT_TOKENS,
+};
+
+const DESTINATION: Record<Backend, string> = {
+  gateway: 'the Vercel AI Gateway',
+  typesafe: 'api.typesafe.ai',
+  cloudflare: 'Cloudflare Workers AI',
 };
 
 export interface ResolveArgs {
@@ -48,8 +68,33 @@ export async function resolveProvider(args: ResolveArgs): Promise<Resolved> {
         process.env.TYPESAFE_API_KEY ??
         cfg.typesafeApiKey;
 
+  const cfAccount = process.env.CLOUDFLARE_ACCOUNT_ID ?? cfg.cloudflareAccountId;
+  const cfToken =
+    (args.backend === 'cloudflare' ? args.apiKey : undefined) ??
+    process.env.CLOUDFLARE_API_TOKEN ??
+    cfg.cloudflareApiToken;
+  const cfReady = Boolean(cfAccount && cfToken);
+
+  // Prefer the route that can actually finish a large run for free.
   const chosen: Backend | null =
-    args.backend ?? (gatewayKey ? 'gateway' : typesafeKey ? 'typesafe' : null);
+    args.backend ?? (cfReady ? 'cloudflare' : gatewayKey ? 'gateway' : typesafeKey ? 'typesafe' : null);
+
+  if (chosen === 'cloudflare') {
+    if (!cfAccount || !cfToken) {
+      throw new Error(
+        'Cloudflare needs both an account id and an API token. Set CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN, or run: jevalyzer auth --cloudflare',
+      );
+    }
+    const modelId = args.model ?? DEFAULT_MODEL.cloudflare;
+    return {
+      backend: 'cloudflare',
+      model: cloudflareJev({ accountId: cfAccount, apiToken: cfToken, modelId }),
+      modelId,
+      keySource: process.env.CLOUDFLARE_API_TOKEN ? 'env' : 'config',
+      contextTokens: CONTEXT.cloudflare,
+      destination: DESTINATION.cloudflare,
+    };
+  }
 
   if (chosen === 'typesafe') {
     if (!typesafeKey) throw new Error('No TypeSafe API key. Set TYPESAFE_AI_API_KEY or run: jevalyzer auth --typesafe');
@@ -59,6 +104,8 @@ export async function resolveProvider(args: ResolveArgs): Promise<Resolved> {
       model: createTypeSafeAi({ apiKey: typesafeKey }).evaluationModel(modelId),
       modelId,
       keySource: process.env.TYPESAFE_AI_API_KEY || process.env.TYPESAFE_API_KEY ? 'env' : 'config',
+      contextTokens: CONTEXT.typesafe,
+      destination: DESTINATION.typesafe,
     };
   }
 
@@ -70,6 +117,8 @@ export async function resolveProvider(args: ResolveArgs): Promise<Resolved> {
       model: createGateway({ apiKey: gatewayKey }).evaluationModel(modelId),
       modelId,
       keySource: args.apiKey ? 'flag' : process.env.AI_GATEWAY_API_KEY ? 'env' : 'config',
+      contextTokens: CONTEXT.gateway,
+      destination: DESTINATION.gateway,
     };
   }
 
@@ -99,7 +148,8 @@ request - including free ones. Two ways forward:
   1. Add a card:  https://vercel.com/d?to=%2F%5Bteam%5D%2F%7E%2Fai%3Fmodal%3Dadd-credit-card
      Jev stays free until 2026-09-25, and your free credits unlock.
 
-  2. Skip Vercel entirely - get a key from https://console.typesafe.ai/keys then:
-       export TYPESAFE_AI_API_KEY=sk-...
-       jevalyzer analyze --backend typesafe
+  2. Skip Vercel entirely. Cloudflare Workers AI serves the same model on a
+     free daily allocation with no payment method required:
+       jevalyzer auth --cloudflare
+       jevalyzer analyze --backend cloudflare
 `;

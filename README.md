@@ -40,8 +40,9 @@ before signing up for anything.
 
 ## Bring your own account
 
-Jevalyzer ships with no credentials — it uses **your** key, via either of two
-backends. Whichever one you have credentials for is picked automatically.
+Jevalyzer ships with no credentials — it uses **your** account, via any of three
+backends. Whichever you have credentials for is picked automatically, preferring
+the one that can finish a large run for free.
 
 **Vercel AI Gateway** (`--backend gateway`, model `typesafe-ai/jev`)
 
@@ -59,10 +60,29 @@ backends. Whichever one you have credentials for is picked automatically.
 >
 > If you would rather not add a card, use the direct backend below.
 
+**Cloudflare Workers AI** (`--backend cloudflare`, model `typesafe/jev`) — *free, no card*
+
+Workers AI serves the same model on a **free allocation of 10,000 Neurons/day**
+that needs no payment method at all. This is the route to use if you do not want
+to put money anywhere.
+
+1. `jevalyzer auth --cloudflare` — it asks for your account id and an API token
+2. Account id is in the [dashboard](https://dash.cloudflare.com) sidebar; create
+   a token at [profile/api-tokens](https://dash.cloudflare.com/profile/api-tokens)
+   with the **Workers AI** template
+3. Or `export CLOUDFLARE_ACCOUNT_ID=... CLOUDFLARE_API_TOKEN=...`
+
+Note this deployment's context window is **32k**, not 64k, so exchanges are
+packed harder and long autonomous runs split into more segments. Jevalyzer
+derives the packing budget from whichever backend is in use.
+
 **TypeSafe directly** (`--backend typesafe`, model `jev-latest`)
 
 1. Create a key at [console.typesafe.ai/keys](https://console.typesafe.ai/keys)
 2. `jevalyzer auth --typesafe`, or `export TYPESAFE_AI_API_KEY=sk-...`
+
+Early access is waitlisted and there is no free credit, so this is mainly for
+people who already have a TypeSafe account.
 
 Precedence is `--api-key` > environment > `~/.jevalyzer/config.json` (mode 600).
 `--model` accepts any AI SDK evaluation model, so you can also point at an

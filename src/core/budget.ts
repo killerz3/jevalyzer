@@ -15,6 +15,16 @@ export const STATE_TARGET_TOKENS = 56_000;
 export const STATE_CEILING_TOKENS = 60_000;
 export const QUESTION_RESERVE_TOKENS = 1_500;
 
+/**
+ * Backends expose different context windows for the same model - TypeSafe's own
+ * API allows 64k, Cloudflare's deployment 32k - so the packing target is
+ * derived from whichever route is in use rather than hardcoded.
+ */
+export function budgetFor(contextTokens: number): { target: number; ceiling: number } {
+  const usable = Math.max(4_000, contextTokens - QUESTION_RESERVE_TOKENS);
+  return { target: Math.floor(usable * 0.9), ceiling: Math.floor(usable * 0.96) };
+}
+
 export interface PackedTool {
   name: string;
   input: string;
@@ -149,6 +159,7 @@ export function packExchange(
   e: Exchange,
   cal: TokenCalibrator,
   target = STATE_TARGET_TOKENS,
+  ceiling = STATE_CEILING_TOKENS,
 ): Packed[] {
   const state = baseState(e);
   const applied: string[] = [];
@@ -161,7 +172,7 @@ export function packExchange(
     tokens = cal.estimate(stateChars(state));
   }
 
-  if (tokens <= STATE_CEILING_TOKENS) {
+  if (tokens <= ceiling) {
     return [{ state, estimatedTokens: tokens, applied, chunked: false }];
   }
 
