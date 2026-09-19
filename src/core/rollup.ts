@@ -289,3 +289,72 @@ export function costByModel(
   }
   return [...rows.values()].sort((a, b) => b.usd - a.usd);
 }
+
+
+export interface SessionStats {
+  sessionId: string;
+  tool: string;
+  project: string | null;
+  model: string | null;
+  exchanges: number;
+  score: number;
+  delivered: number;
+  issues: number;
+  frustration: number;
+  startedAt: string;
+  /** Wall-clock span of the session in minutes, where timestamps allow. */
+  minutes: number;
+  /** First thing asked, as a label for the session. */
+  title: string;
+}
+
+/**
+ * Per-session rollup. A session is the unit people actually remember - "that
+ * afternoon the refactor went sideways" - so the report needs it alongside the
+ * per-model view, and it is where a bad run shows up as a run rather than as
+ * scattered low scores.
+ */
+export function bySession(
+  scored: Scored[],
+  titleOf: (exchangeId: string) => string,
+): SessionStats[] {
+  const groups = new Map<string, Scored[]>();
+  for (const s of scored) {
+    const list = groups.get(s.ev.sessionId) ?? [];
+    list.push(s);
+    groups.set(s.ev.sessionId, list);
+  }
+
+  return [...groups.entries()]
+    .map(([sessionId, items]) => {
+      items.sort((a, b) => a.ev.startedAt.localeCompare(b.ev.startedAt));
+      const first = items[0]!;
+      const substantive = items.filter((s) => s.substantive);
+      const base = substantive.length ? substantive : items;
+      const times = items
+        .map((s) => new Date(s.ev.startedAt).getTime())
+        .filter((t) => !Number.isNaN(t));
+      const minutes =
+        times.length > 1 ? (Math.max(...times) - Math.min(...times)) / 60000 : 0;
+      // Models can change mid-session; report the one used most.
+      const counts = new Map<string, number>();
+      for (const s of items) if (s.ev.model) counts.set(s.ev.model, (counts.get(s.ev.model) ?? 0) + 1);
+      const model = [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
+
+      return {
+        sessionId,
+        tool: first.ev.tool,
+        project: first.ev.project,
+        model,
+        exchanges: items.length,
+        score: base.reduce((a, s) => a + s.score, 0) / base.length,
+        delivered: base.filter((s) => s.outcome === 'delivered').length / base.length,
+        issues: items.reduce((a, s) => a + s.issues.length, 0),
+        frustration: items.reduce((a, s) => a + s.frustration, 0) / items.length,
+        startedAt: first.ev.startedAt,
+        minutes,
+        title: titleOf(first.ev.exchangeId),
+      };
+    })
+    .sort((a, b) => a.score - b.score);
+}

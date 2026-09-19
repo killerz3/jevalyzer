@@ -1,9 +1,9 @@
 import type { Exchange } from '../adapters/types.ts';
 import { JEV_INPUT_USD_PER_MTOK, sessionCost } from '../core/cost.ts';
-import { c, usd } from '../core/fmt.ts';
+import { c, num, usd } from '../core/fmt.ts';
 import { preferences } from '../core/prefer.ts';
 import { BANK_VERSION } from '../core/questions.ts';
-import { groupBy, scoreExchange, weekOf, type Scored } from '../core/rollup.ts';
+import { bySession, groupBy, scoreExchange, weekOf, type Scored } from '../core/rollup.ts';
 import { Store } from '../core/store.ts';
 import { shortProject } from '../core/text.ts';
 import {
@@ -278,6 +278,51 @@ export async function report(opts: { out: string; open?: boolean }): Promise<voi
     ),
   );
 
+  // --- 6b. Sessions ---------------------------------------------------------
+  const sessions = bySession(scored, (id) => {
+    const ex = store.exchange(id) as Exchange | null;
+    return (ex?.userText ?? '').replace(/\s+/g, ' ').slice(0, 90) || '(no prompt text)';
+  });
+  const longSessions = sessions.filter((x) => x.exchanges >= 3);
+  const worstSessions = (longSessions.length >= 5 ? longSessions : sessions).slice(0, 30);
+
+  sections.push(
+    card(
+      'Sessions that went worst',
+      `${num(sessions.length)} sessions in total. A session is the unit you actually remember, and it is where a bad run shows up as a run rather than as scattered low scores. Ranked by mean score${longSessions.length >= 5 ? ', limited to sessions of 3 or more exchanges' : ''}.`,
+      withTable(
+        hbars(
+          worstSessions.slice(0, 15).map((x) => ({
+            label: x.title.slice(0, 44),
+            value: x.score,
+            note: `${x.exchanges} ex`,
+            tip:
+              `${x.title}\n${x.tool}${x.model ? ' · ' + x.model : ''} · ${shortProject(x.project)}\n` +
+              `${x.exchanges} exchanges · ${n1(x.delivered * 100)}% delivered · ${x.issues} issues` +
+              (x.minutes >= 1 ? `\n${Math.round(x.minutes)} minutes` : ''),
+          })),
+          { max: 100 },
+        ),
+        {
+          headers: ['Session', 'Tool', 'Model', 'Score', 'Exchanges', 'Delivered', 'Issues', 'Minutes', 'Started'],
+          numeric: [false, false, false, true, true, true, true, true, false],
+          rows: worstSessions.map((x) => [
+            x.title.slice(0, 70),
+            x.tool,
+            x.model ?? '-',
+            n1(x.score),
+            x.exchanges,
+            `${n1(x.delivered * 100)}%`,
+            x.issues,
+            x.minutes >= 1 ? Math.round(x.minutes) : '-',
+            x.startedAt.slice(0, 10),
+          ]),
+        },
+        'Show the session table',
+      ),
+    ),
+  );
+
   // --- 7. Cost --------------------------------------------------------------
   const costRows = byModel
     .map((g) => {
@@ -393,7 +438,8 @@ export async function report(opts: { out: string; open?: boolean }): Promise<voi
           k: pick ? `Preferred model  ·  n=${pick.n}` : 'Preferred model',
         };
       })(),
-      { n: String(issueCount), k: 'Issues found' },
+      { n: num(issueCount), k: 'Issues found' },
+      { n: num(sessions.length), k: 'Sessions' },
       { n: `${n1(scored.filter((s) => s.outcome === 'delivered').length / scored.length * 100)}%`, k: 'Delivered' },
       { n: usd((spend / 1e6) * JEV_INPUT_USD_PER_MTOK), k: 'Cost to analyse' },
     ],

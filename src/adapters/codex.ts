@@ -27,6 +27,21 @@ interface Rec {
   [k: string]: any;
 }
 
+/**
+ * Codex injects several blocks as `role: "user"` that the human never typed:
+ * the repo's AGENTS.md, an environment dump at session start, and an abort
+ * marker. Counted as prompts they fabricate roughly two extra "exchanges" per
+ * session - each one an environment dump no agent can deliver on - which drags
+ * the whole tool's delivery rate down and pollutes every session title.
+ */
+const INJECTED = [
+  /^<environment_context>/,
+  /^<user_instructions>/,
+  /^#\s*AGENTS\.md instructions/i,
+  /^<project_doc>/,
+];
+const ABORTED = /^<turn_aborted>/;
+
 function textOf(content: unknown): string {
   if (typeof content === 'string') return content;
   if (!Array.isArray(content)) return '';
@@ -69,6 +84,7 @@ interface Draft {
   calls: Map<string, ToolCall>;
   order: string[];
   usage: Usage | null;
+  interrupted: boolean;
 }
 
 async function walk(dir: string, out: string[]): Promise<void> {
@@ -130,8 +146,14 @@ export const codex: Adapter = {
       const role = item.role;
 
       if (role === 'user' || kind === 'user_message') {
-        const text = textOf(item.content ?? item.message ?? item.text);
-        if (!text.trim()) continue;
+        const text = textOf(item.content ?? item.message ?? item.text).trim();
+        if (!text) continue;
+        if (ABORTED.test(text)) {
+          // An abort annotates the turn in flight rather than starting one.
+          if (cur) cur.interrupted = true;
+          continue;
+        }
+        if (INJECTED.some((re) => re.test(text))) continue;
         const key = `u:${Bun.hash(text)}`;
         if (seen.has(key)) continue;
         seen.add(key);
@@ -144,6 +166,7 @@ export const codex: Adapter = {
           calls: new Map(),
           order: [],
           usage: null,
+          interrupted: false,
         };
         continue;
       }
@@ -214,7 +237,7 @@ export const codex: Adapter = {
         toolCalls: d.order.map((id) => d.calls.get(id)!).filter(Boolean),
         usage: d.usage,
         nextUserText: drafts[i + 1]?.userText ?? null,
-        interrupted: false,
+        interrupted: d.interrupted,
         permissionDenials: 0,
         isSidechain: false,
       };
