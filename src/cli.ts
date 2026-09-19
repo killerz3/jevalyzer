@@ -22,6 +22,23 @@ program
   )
   .version('0.1.0');
 
+// The default command: `bunx jevalyzer` with no arguments does the whole thing,
+// guided. It is a real subcommand rather than options on the program, because
+// options declared on both the program and a subcommand collide - commander
+// binds the flag to the parent and the subcommand never sees its value.
+program
+  .command('run', { isDefault: true })
+  .description('Guided: find sessions, set up if needed, score, and write the report.')
+  .option('-p, --profile <name>', 'minimal (default) or extensive')
+  .option('-l, --limit <n>', 'only score the first N exchanges', (v) => parseInt(v, 10))
+  .option('-o, --out <file>', 'report path', 'jevalyzer-report.html')
+  .option('--no-open', 'do not open the report when it is written')
+  .option('-y, --yes', 'accept the defaults and skip the prompts')
+  .action(async (opts) => {
+    const { run } = await import('./commands/run.ts');
+    await run({ ...opts, open: opts.open !== false });
+  });
+
 program
   .command('scan')
   .description('Find local sessions and estimate what an analysis would cost. Sends nothing.')
@@ -43,6 +60,7 @@ program
   .option('--budget <usd>', 'refuse to exceed this spend', (v) => parseFloat(v), 5)
   .option('--concurrency <n>', 'parallel requests', (v) => parseInt(v, 10), 4)
   .option('--patient', 'one request at a time, for a throttled free-tier key')
+  .option('-p, --profile <name>', 'minimal or extensive question bank')
   .option('--model <id>', 'evaluation model (default depends on --backend)')
   .option('--backend <name>', 'gateway | typesafe | cloudflare (default: whichever you have)')
   .option('--api-key <key>', 'API key for the chosen backend (else env, else config)')

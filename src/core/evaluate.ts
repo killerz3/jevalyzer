@@ -1,7 +1,7 @@
 import { experimental_evaluate as evaluate, type Experimental_EvaluationModel } from 'ai';
 import type { Packed } from './budget.ts';
 import { isZdrUnavailable } from './provider.ts';
-import { QUESTIONS } from './questions.ts';
+import type { Experimental_EvaluationQuestion } from 'ai';
 import type { StoredAnswer } from './store.ts';
 
 /**
@@ -12,6 +12,8 @@ import type { StoredAnswer } from './store.ts';
 
 export interface EvaluateOptions {
   model: Experimental_EvaluationModel;
+  /** The question bank for the chosen profile. */
+  questions: Record<string, Experimental_EvaluationQuestion>;
   /** Gateway-only option; harmless and ignored on the direct TypeSafe route. */
   zeroDataRetention: boolean;
   maxRetries?: number;
@@ -55,7 +57,7 @@ export function makeEvaluator(opts: EvaluateOptions) {
       evaluate({
         model,
         state: packed.state as unknown as Parameters<typeof evaluate>[0]['state'],
-        questions: QUESTIONS,
+        questions: opts.questions,
         maxRetries: opts.maxRetries ?? 2,
         abortSignal: signal,
         ...(useZdr ? { providerOptions: { gateway: { zeroDataRetention: true } } } : {}),

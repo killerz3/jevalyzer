@@ -188,3 +188,46 @@ export const SCORE_LEVELS: Partial<Record<QuestionId, number>> = Object.fromEntr
     .filter(([, q]) => q.type === 'score')
     .map(([k, q]) => [k, (q as { criteria: readonly unknown[] }).criteria.length]),
 ) as Partial<Record<QuestionId, number>>;
+
+
+/**
+ * Two depth profiles.
+ *
+ * `minimal` is the default: seven questions covering the leaderboard, the
+ * preference index and the headline failure shapes. It is a third of the tokens
+ * and, on a rate-limited key, a third of the wall-clock.
+ *
+ * `extensive` asks everything, which is what the issue heatmap and the
+ * communication breakdown need.
+ *
+ * Both write into the same store under their own bank name, so a minimal pass
+ * can be upgraded later without discarding it, and scores stay comparable
+ * because the composite renormalises over whichever dimensions are present.
+ */
+export type Profile = 'minimal' | 'extensive';
+
+const MINIMAL_IDS = [
+  'exchangeKind',
+  'correctness',
+  'followedInstructions',
+  'efficiency',
+  'outcome',
+  'claimedSuccessWithoutEvidence',
+  'userReaction',
+] as const satisfies readonly QuestionId[];
+
+export function bankFor(profile: Profile): Record<string, Question> {
+  if (profile === 'extensive') return QUESTIONS;
+  const out: Record<string, Question> = {};
+  for (const id of MINIMAL_IDS) out[id] = QUESTIONS[id];
+  return out;
+}
+
+export function bankSize(profile: Profile): number {
+  return Object.keys(bankFor(profile)).length;
+}
+
+export const PROFILE_BLURB: Record<Profile, string> = {
+  minimal: `${MINIMAL_IDS.length} questions - scores, leaderboard, preferred model, outcomes`,
+  extensive: `${QUESTION_IDS.length} questions - adds the issue heatmap, communication and risk analysis`,
+};

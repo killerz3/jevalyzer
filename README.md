@@ -14,29 +14,72 @@ as calibrated probabilities in one round trip. That is what makes grading a
 whole history cheap enough to bother with — a typical user pays **one to thirty
 cents** for their entire archive.
 
-## Install
+## Just run it
 
 ```bash
-bunx jevalyzer scan          # no install
-bun install -g jevalyzer     # or put it on PATH
+bunx jevalyzer
 ```
+
+No install, no clone, no subcommand to learn. It finds your sessions, walks you
+through setup the first time, asks how deep to go, shows you the cost before
+sending anything, scores with a live progress display, and opens the report.
+
+```
+jevalyzer  grade your local agent sessions with Jev
+
+Found
+  Claude Code     61 sessions  220 exchanges, 43.4 MB
+  Antigravity     25 sessions  25 exchanges, 472.4 KB
+
+How deep?
+  1 minimal    7 questions - scores, leaderboard, preferred model, outcomes  (default)
+  2 extensive  21 questions - adds the issue heatmap, communication and risk analysis
+
+Plan
+  245 exchanges · 246 requests · 7 questions each
+  ~1,253,683 input tokens · ~$0.05 at $0.042/M · via gateway
+
+Scoring
+  ⠸ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  62%  152/245
+     scored 150  ·  24.1/min  ·  486,200 tokens  ·  ETA 4m
+     gateway · minimal profile · 7 questions · 120/min allowed
+```
+
+Free tiers are rate-limited, so runs pause. Everything is saved as it lands and
+re-running resumes, so **Ctrl-C is always safe** — run `bunx jevalyzer` again
+and it picks up where it stopped.
 
 Requires [Bun](https://bun.sh) 1.2+. A standalone binary that needs no runtime
 is attached to each release.
 
-## Use it
+## Two depths
+
+| Profile | Questions | Good for |
+|---|---|---|
+| `minimal` *(default)* | 7 | Scores, model leaderboard, preferred model, outcomes. A third of the tokens and a third of the wall-clock. |
+| `extensive` | 21 | Adds the issue heatmap, communication breakdown and risk analysis. |
 
 ```bash
-jevalyzer scan               # find sessions, estimate cost. Sends nothing.
-jevalyzer auth               # paste your own AI Gateway key
-jevalyzer analyze            # score everything (add --dry-run first)
-jevalyzer report --open      # interactive HTML
+bunx jevalyzer --profile extensive
+```
+
+They share one store. An `extensive` row satisfies a `minimal` request, so
+upgrading later never re-pays for what you already have, and the Jevalyzer
+Score renormalises over whichever dimensions a profile asked — the two stay
+comparable rather than minimal being dragged toward a neutral middle.
+
+## The individual commands
+
+You rarely need these — `bunx jevalyzer` does all of it — but they exist:
+
+```bash
+jevalyzer scan               # find sessions, estimate cost. Sends nothing, needs no account.
+jevalyzer auth               # store a key
+jevalyzer analyze            # just the scoring (--dry-run, --limit, --patient, --profile)
+jevalyzer report --open      # rebuild the HTML from the store
 jevalyzer tui                # terminal dashboard
 jevalyzer doctor --probe     # check the setup end to end
 ```
-
-`scan` works with no account at all, so you can see what would be analysed
-before signing up for anything.
 
 ## Bring your own account
 

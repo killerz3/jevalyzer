@@ -6,8 +6,9 @@ import { BILLING_HELP, isBillingBlock, resolveProvider, type Backend } from '../
 import { JEV_FREE_UNTIL, JEV_INPUT_USD_PER_MTOK, jevCost } from '../core/cost.ts';
 import { isRateLimit, makeEvaluator, pool, RateLimiter } from '../core/evaluate.ts';
 import { c, num, table, usd } from '../core/fmt.ts';
-import { BANK_VERSION, QUESTION_IDS } from '../core/questions.ts';
+import { BANK_VERSION, bankFor, bankSize, type Profile } from '../core/questions.ts';
 import { redactDeep } from '../core/redact.ts';
+import { Progress } from '../core/progress.ts';
 import { Store, type StoredAnswer } from '../core/store.ts';
 
 export interface AnalyzeOptions {
@@ -24,7 +25,18 @@ export interface AnalyzeOptions {
   force?: boolean;
   includeSidechains?: boolean;
   patient?: boolean;
+  profile?: Profile;
   yes?: boolean;
+  /** Suppress the summary tables when a wrapper prints its own. */
+  quiet?: boolean;
+}
+
+export interface AnalyzeResult {
+  saved: number;
+  failed: number;
+  remaining: number;
+  tokens: number;
+  quotaExhausted: boolean;
 }
 
 interface Job {
@@ -32,27 +44,38 @@ interface Job {
   packed: Packed;
 }
 
-export async function analyze(opts: AnalyzeOptions): Promise<void> {
+export async function analyze(opts: AnalyzeOptions): Promise<AnalyzeResult> {
+  const profile: Profile = opts.profile ?? 'minimal';
+  const questions = bankFor(profile);
   const store = new Store();
-  const cached = opts.force ? new Set<string>() : store.cachedIds(BANK_VERSION);
+  const cached = opts.force ? new Set<string>() : store.cachedIds(BANK_VERSION, profile);
+  const nothing: AnalyzeResult = {
+    saved: 0,
+    failed: 0,
+    remaining: 0,
+    tokens: 0,
+    quotaExhausted: false,
+  };
 
-  process.stderr.write(c.dim('Reading sessions...\r'));
+  if (!opts.quiet) process.stderr.write(c.dim('Reading sessions...\r'));
   const scans = await scanSources(opts.source);
   let exchanges = allExchanges(scans, opts.includeSidechains);
-  process.stderr.write(' '.repeat(40) + '\r');
+  if (!opts.quiet) process.stderr.write(' '.repeat(40) + '\r');
 
   const skipped = exchanges.filter((e) => cached.has(e.id)).length;
   exchanges = exchanges.filter((e) => !cached.has(e.id));
   if (opts.limit != null) exchanges = exchanges.slice(0, opts.limit);
 
   if (exchanges.length === 0) {
-    console.log(
-      skipped
-        ? c.green(`Nothing new. ${num(skipped)} exchange(s) already scored; use --force to redo.`)
-        : 'No exchanges found. Run ' + c.bold('jevalyzer scan') + ' to see what was detected.',
-    );
+    if (!opts.quiet) {
+      console.log(
+        skipped
+          ? c.green(`Nothing new. ${num(skipped)} exchange(s) already scored; use --force to redo.`)
+          : 'No exchanges found. Run ' + c.bold('jevalyzer scan') + ' to see what was detected.',
+      );
+    }
     store.close();
-    return;
+    return nothing;
   }
 
   // The provider is resolved first because the context window - and therefore
@@ -69,7 +92,7 @@ export async function analyze(opts: AnalyzeOptions): Promise<void> {
       console.log(c.yellow(e instanceof Error && e.message === 'no-key' ? SETUP_HELP : String(e)));
       store.close();
       process.exitCode = 1;
-      return;
+      return nothing;
     }
     provider = null;
   }
@@ -96,19 +119,23 @@ export async function analyze(opts: AnalyzeOptions): Promise<void> {
   const estTokens = jobs.reduce((a, j) => a + j.packed.estimatedTokens, 0);
   const estCost = jevCost(estTokens);
 
-  console.log(
-    table(
-      ['Exchanges', 'Requests', 'Est. input tokens', 'Est. cost', 'Cached'],
-      [[num(exchanges.length), num(jobs.length), num(estTokens), usd(estCost), num(skipped)]],
-    ),
-  );
+  if (!opts.quiet) {
+    console.log(
+      table(
+        ['Exchanges', 'Requests', 'Est. input tokens', 'Est. cost', 'Cached'],
+        [[num(exchanges.length), num(jobs.length), num(estTokens), usd(estCost), num(skipped)]],
+      ),
+    );
+  }
 
   if (opts.dryRun) {
     const sample = jobs[0]!;
     console.log(c.bold('\nExactly what one request would send:'));
     console.log(c.dim(`state (${num(sample.packed.estimatedTokens)} est. tokens, ladder: ${sample.packed.applied.join(', ') || 'none applied'})`));
     console.log(JSON.stringify(sample.packed.state, null, 2).slice(0, 4000));
-    console.log(c.dim(`\nplus ${QUESTION_IDS.length} questions, answered in one round trip.`));
+    console.log(
+      c.dim(`\nplus ${bankSize(profile)} questions (${profile} profile), answered in one round trip.`),
+    );
     const over = jobs.filter((j) => j.packed.estimatedTokens > ceiling);
     console.log(
       over.length
@@ -119,7 +146,7 @@ export async function analyze(opts: AnalyzeOptions): Promise<void> {
           ),
     );
     store.close();
-    return;
+    return nothing;
   }
 
   if (estCost > opts.budget) {
@@ -130,7 +157,7 @@ export async function analyze(opts: AnalyzeOptions): Promise<void> {
     );
     store.close();
     process.exitCode = 1;
-    return;
+    return nothing;
   }
 
   if (!opts.yes && process.stdin.isTTY) {
@@ -152,12 +179,13 @@ export async function analyze(opts: AnalyzeOptions): Promise<void> {
     if (!/^y(es)?$/i.test(answer.trim())) {
       console.log('Aborted.');
       store.close();
-      return;
+      return nothing;
     }
   }
 
   let zdrGivenUp = false;
   const run = makeEvaluator({
+    questions,
     model: provider!.model,
     zeroDataRetention: opts.zdr,
     onZdrDisabled: () => {
@@ -186,12 +214,17 @@ export async function analyze(opts: AnalyzeOptions): Promise<void> {
   /** Distinct failure message -> how many times it happened. */
   const failures = new Map<string, number>();
 
-  const tick = () => {
-    const pct = Math.round((done / jobs.length) * 100);
-    process.stderr.write(
-      `\r${c.cyan('scoring')} ${done}/${jobs.length} (${pct}%)  ${c.dim(`${limiter.rate}/min`)}  ${failed ? c.yellow(`${failed} failed`) : ''}   `,
-    );
-  };
+  const progress = new Progress(!opts.quiet && process.stderr.isTTY === true);
+  progress.start(jobs.length);
+  const tick = () =>
+    progress.update({
+      done,
+      saved,
+      failed,
+      tokens: actualTokens,
+      rate: limiter.rate,
+      note: `${provider!.backend} · ${profile} profile · ${bankSize(profile)} questions · ${limiter.rate}/min allowed`,
+    });
 
   await pool(
     jobs,
@@ -227,7 +260,7 @@ export async function analyze(opts: AnalyzeOptions): Promise<void> {
         // Persist as soon as this exchange is complete. A throttled run can be
         // interrupted at any point, and anything already paid for must survive.
         if (entry.answers.length === (segmentsOf.get(job.exchange.id) ?? 1)) {
-          saveExchange(store, job.exchange, entry);
+          saveExchange(store, job.exchange, entry, profile);
           saved += 1;
         }
       }
@@ -238,9 +271,19 @@ export async function analyze(opts: AnalyzeOptions): Promise<void> {
       shouldStop: () => quotaExhausted,
     },
   );
-  process.stderr.write('\r' + ' '.repeat(70) + '\r');
+  progress.stop();
 
   const secs = ((Date.now() - started) / 1000).toFixed(1);
+  if (opts.quiet) {
+    store.close();
+    return {
+      saved,
+      failed,
+      remaining: exchanges.length - saved,
+      tokens: actualTokens,
+      quotaExhausted,
+    };
+  }
   console.log(
     table(
       ['Scored', 'Failed', 'Actual tokens', 'Actual cost', 'Time'],
@@ -279,6 +322,7 @@ export async function analyze(opts: AnalyzeOptions): Promise<void> {
   if ([...failures.keys()].some(isBillingBlock)) console.log(c.yellow(BILLING_HELP));
   console.log(c.dim('\n  Next: ') + 'jevalyzer report --open' + c.dim('  or  ') + 'jevalyzer tui');
   store.close();
+  return { saved, failed, remaining: exchanges.length - saved, tokens: actualTokens, quotaExhausted };
 }
 
 /**
@@ -289,7 +333,8 @@ export async function analyze(opts: AnalyzeOptions): Promise<void> {
 function mergeAnswers(parts: Record<string, StoredAnswer>[]): Record<string, StoredAnswer> {
   if (parts.length === 1) return parts[0]!;
   const out: Record<string, StoredAnswer> = {};
-  for (const id of QUESTION_IDS) {
+  const ids = [...new Set(parts.flatMap((p) => Object.keys(p)))];
+  for (const id of ids) {
     const present = parts.map((p) => p[id]).filter(Boolean) as StoredAnswer[];
     if (!present.length) continue;
     const first = present[0]!;
@@ -319,10 +364,12 @@ function saveExchange(
   store: Store,
   e: Exchange,
   entry: { answers: Record<string, StoredAnswer>[]; tokens: number; conf: number[] },
+  profile: Profile,
 ): void {
   store.save(
     {
       exchangeId: e.id,
+      bank: profile,
       tool: e.tool,
       sessionId: e.sessionId,
       model: e.model,

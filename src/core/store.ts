@@ -21,6 +21,8 @@ export interface StoredAnswer {
 
 export interface StoredEvaluation {
   exchangeId: string;
+  /** Which question profile produced this row: 'minimal' or 'extensive'. */
+  bank: string;
   tool: string;
   sessionId: string;
   model: string | null;
@@ -45,6 +47,7 @@ export class Store {
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS evaluations (
         exchange_id  TEXT NOT NULL,
+        bank         TEXT NOT NULL DEFAULT 'extensive',
         bank_version INTEGER NOT NULL,
         tool         TEXT NOT NULL,
         session_id   TEXT NOT NULL,
@@ -56,7 +59,7 @@ export class Store {
         chunked      INTEGER NOT NULL DEFAULT 0,
         confidence   REAL,
         evaluated_at TEXT NOT NULL,
-        PRIMARY KEY (exchange_id, bank_version)
+        PRIMARY KEY (exchange_id, bank, bank_version)
       );
       CREATE INDEX IF NOT EXISTS idx_eval_model ON evaluations(model);
       CREATE INDEX IF NOT EXISTS idx_eval_tool  ON evaluations(tool);
@@ -66,13 +69,65 @@ export class Store {
         payload     TEXT NOT NULL
       );
     `);
+    this.migrate();
   }
 
-  /** Exchange ids already evaluated at this bank version. */
-  cachedIds(bankVersion: number): Set<string> {
+  /**
+   * Stores written before question profiles existed have no `bank` column, and
+   * their primary key cannot hold a minimal and an extensive row for the same
+   * exchange. Adding a column cannot change a primary key, so rebuild the table
+   * and carry the old rows across as `extensive` - which is what they are.
+   */
+  private migrate(): void {
+    const cols = this.db.query('PRAGMA table_info(evaluations)').all() as { name: string }[];
+    if (cols.some((c) => c.name === 'bank')) return;
+
+    this.db.transaction(() => {
+      this.db.exec(`
+        CREATE TABLE evaluations_new (
+          exchange_id  TEXT NOT NULL,
+          bank         TEXT NOT NULL DEFAULT 'extensive',
+          bank_version INTEGER NOT NULL,
+          tool         TEXT NOT NULL,
+          session_id   TEXT NOT NULL,
+          model        TEXT,
+          project      TEXT,
+          started_at   TEXT,
+          answers_json TEXT NOT NULL,
+          input_tokens INTEGER NOT NULL DEFAULT 0,
+          chunked      INTEGER NOT NULL DEFAULT 0,
+          confidence   REAL,
+          evaluated_at TEXT NOT NULL,
+          PRIMARY KEY (exchange_id, bank, bank_version)
+        );
+        INSERT INTO evaluations_new
+          (exchange_id, bank, bank_version, tool, session_id, model, project,
+           started_at, answers_json, input_tokens, chunked, confidence, evaluated_at)
+        SELECT exchange_id, 'extensive', bank_version, tool, session_id, model, project,
+               started_at, answers_json, input_tokens, chunked, confidence, evaluated_at
+        FROM evaluations;
+        DROP TABLE evaluations;
+        ALTER TABLE evaluations_new RENAME TO evaluations;
+        CREATE INDEX IF NOT EXISTS idx_eval_model ON evaluations(model);
+        CREATE INDEX IF NOT EXISTS idx_eval_tool  ON evaluations(tool);
+      `);
+    })();
+  }
+
+  /**
+   * Exchange ids already evaluated. An `extensive` row satisfies a `minimal`
+   * request - it is a superset - so upgrading is never redundant work, and
+   * re-running minimal after extensive costs nothing.
+   */
+  cachedIds(bankVersion: number, bank: string): Set<string> {
+    const banks = bank === 'minimal' ? ['minimal', 'extensive'] : ['extensive'];
     const rows = this.db
-      .query('SELECT exchange_id FROM evaluations WHERE bank_version = ?')
-      .all(bankVersion) as { exchange_id: string }[];
+      .query(
+        `SELECT exchange_id FROM evaluations WHERE bank_version = ? AND bank IN (${banks
+          .map(() => '?')
+          .join(',')})`,
+      )
+      .all(bankVersion, ...banks) as { exchange_id: string }[];
     return new Set(rows.map((r) => r.exchange_id));
   }
 
@@ -80,12 +135,13 @@ export class Store {
     this.db
       .query(
         `INSERT OR REPLACE INTO evaluations
-         (exchange_id, bank_version, tool, session_id, model, project, started_at,
+         (exchange_id, bank, bank_version, tool, session_id, model, project, started_at,
           answers_json, input_tokens, chunked, confidence, evaluated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         ev.exchangeId,
+        ev.bank,
         ev.bankVersion,
         ev.tool,
         ev.sessionId,
@@ -118,6 +174,7 @@ export class Store {
       : this.db.query(sql).all()) as Record<string, any>[];
     return rows.map((r) => ({
       exchangeId: r.exchange_id,
+      bank: r.bank ?? 'extensive',
       tool: r.tool,
       sessionId: r.session_id,
       model: r.model,
