@@ -52,10 +52,11 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/USER/jevalyzer.git"
+    "url": "git+https://github.com/killerz3/jevalyzer.git"
   },
-  "homepage": "https://github.com/USER/jevalyzer#readme",
+  "homepage": "https://github.com/killerz3/jevalyzer#readme",
   "bugs": {
-    "url": "https://github.com/USER/jevalyzer/issues"
-  }
+    "url": "https://github.com/killerz3/jevalyzer/issues"
+  },
+  "author": "killerz3"
 }

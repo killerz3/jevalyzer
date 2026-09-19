@@ -1,5 +1,9 @@
 # jevalyzer
 
+<p align="center">
+  <img src="docs/cover.png" alt="Sessions from several coding agents converge into a prism that grades them" width="100%">
+</p>
+
 Grade the agent sessions already sitting on your disk.
 
 Jevalyzer reads the chat logs your coding agents write locally — Claude Code,
