@@ -4,7 +4,7 @@ import { TokenCalibrator, packExchange, type Packed } from '../core/budget.ts';
 import { SETUP_HELP } from '../core/config.ts';
 import { BILLING_HELP, isBillingBlock, resolveProvider, type Backend } from '../core/provider.ts';
 import { JEV_FREE_UNTIL, JEV_INPUT_USD_PER_MTOK, jevCost } from '../core/cost.ts';
-import { makeEvaluator, pool, RateLimiter } from '../core/evaluate.ts';
+import { isRateLimit, makeEvaluator, pool, RateLimiter } from '../core/evaluate.ts';
 import { c, num, table, usd } from '../core/fmt.ts';
 import { BANK_VERSION, QUESTION_IDS } from '../core/questions.ts';
 import { redactDeep } from '../core/redact.ts';
@@ -23,6 +23,7 @@ export interface AnalyzeOptions {
   zdr: boolean;
   force?: boolean;
   includeSidechains?: boolean;
+  patient?: boolean;
   yes?: boolean;
 }
 
@@ -66,6 +67,11 @@ export async function analyze(opts: AnalyzeOptions): Promise<void> {
       });
     }
   }
+
+  /** How many segments each exchange was split into, so it can be saved the
+   *  moment its last one lands rather than at the end of the whole run. */
+  const segmentsOf = new Map<string, number>();
+  for (const j of jobs) segmentsOf.set(j.exchange.id, (segmentsOf.get(j.exchange.id) ?? 0) + 1);
 
   const estTokens = jobs.reduce((a, j) => a + j.packed.estimatedTokens, 0);
   const estCost = jevCost(estTokens);
@@ -153,12 +159,21 @@ export async function analyze(opts: AnalyzeOptions): Promise<void> {
   });
   // Start well below the documented paid ceiling; the limiter finds the real
   // rate from the gateway's pushback rather than assuming one.
-  const limiter = new RateLimiter(120);
+  const limiter = new RateLimiter(opts.patient ? 30 : 120);
 
   // Segments of one split exchange are merged before being stored.
   const merged = new Map<string, { answers: Record<string, StoredAnswer>[]; tokens: number; conf: number[] }>();
   let done = 0;
   let failed = 0;
+  /**
+   * A free-tier key runs out of allowance rather than failing outright. Once a
+   * run of consecutive requests has all been refused, stop instead of grinding
+   * through the rest - the cache means a later re-run picks up where this left
+   * off, so nothing is lost by quitting early.
+   */
+  let consecutiveRateLimits = 0;
+  let quotaExhausted = false;
+  let saved = 0;
   let actualTokens = 0;
   const started = Date.now();
   /** Distinct failure message -> how many times it happened. */
@@ -173,7 +188,7 @@ export async function analyze(opts: AnalyzeOptions): Promise<void> {
 
   await pool(
     jobs,
-    opts.concurrency,
+    opts.patient ? 1 : opts.concurrency,
     async (job) => {
       await limiter.take();
       const out = await run(job.packed);
@@ -188,53 +203,42 @@ export async function analyze(opts: AnalyzeOptions): Promise<void> {
         failed += 1;
         const msg = error instanceof Error ? error.message : String(error);
         failures.set(msg, (failures.get(msg) ?? 0) + 1);
+        if (isRateLimit(error)) {
+          consecutiveRateLimits += 1;
+          if (consecutiveRateLimits >= 6) quotaExhausted = true;
+        } else {
+          consecutiveRateLimits = 0;
+        }
       } else {
+        consecutiveRateLimits = 0;
         actualTokens += result.inputTokens;
         const entry = merged.get(job.exchange.id) ?? { answers: [], tokens: 0, conf: [] };
         entry.answers.push(result.answers);
         entry.tokens += result.inputTokens;
         if (result.confidence != null) entry.conf.push(result.confidence);
         merged.set(job.exchange.id, entry);
+        // Persist as soon as this exchange is complete. A throttled run can be
+        // interrupted at any point, and anything already paid for must survive.
+        if (entry.answers.length === (segmentsOf.get(job.exchange.id) ?? 1)) {
+          saveExchange(store, job.exchange, entry);
+          saved += 1;
+        }
       }
       tick();
     },
-    { onRateLimit: () => limiter.penalize() },
+    {
+      onRateLimit: () => limiter.penalize(),
+      shouldStop: () => quotaExhausted,
+    },
   );
   process.stderr.write('\r' + ' '.repeat(70) + '\r');
-
-  const byId = new Map(exchanges.map((e) => [e.id, e]));
-  store.transaction(() => {
-    for (const [id, entry] of merged) {
-      const e = byId.get(id);
-      if (!e) continue;
-      store.save(
-        {
-          exchangeId: id,
-          tool: e.tool,
-          sessionId: e.sessionId,
-          model: e.model,
-          project: e.project,
-          startedAt: e.startedAt,
-          bankVersion: BANK_VERSION,
-          answers: mergeAnswers(entry.answers),
-          inputTokens: entry.tokens,
-          chunked: entry.answers.length > 1,
-          confidence: entry.conf.length
-            ? entry.conf.reduce((a, b) => a + b, 0) / entry.conf.length
-            : null,
-          evaluatedAt: new Date().toISOString(),
-        },
-        e,
-      );
-    }
-  });
 
   const secs = ((Date.now() - started) / 1000).toFixed(1);
   console.log(
     table(
       ['Scored', 'Failed', 'Actual tokens', 'Actual cost', 'Time'],
       [
-        [num(merged.size), failed ? c.yellow(num(failed)) : '0', num(actualTokens), usd(jevCost(actualTokens)), `${secs}s`],
+        [num(saved), failed ? c.yellow(num(failed)) : '0', num(actualTokens), usd(jevCost(actualTokens)), `${secs}s`],
       ],
     ),
   );
@@ -244,6 +248,17 @@ export async function analyze(opts: AnalyzeOptions): Promise<void> {
       `  Token estimate was ${drift >= 0 ? '+' : ''}${drift.toFixed(1)}% off; calibrated to ${cal.charsPerToken.toFixed(2)} chars/token.`,
     ),
   );
+  if (quotaExhausted) {
+    const left = exchanges.length - saved;
+    console.log(
+      c.yellow(
+        `\n  Stopped early: the gateway stopped accepting requests (free-tier allowance).\n` +
+          `  ${num(saved)} exchange(s) were scored and saved. About ${num(left)} remain -\n` +
+          `  the allowance refills, so just run ${c.bold('jevalyzer analyze')} again to continue\n` +
+          `  from where this left off. Nothing already scored is paid for twice.`,
+      ),
+    );
+  }
   if (zdrGivenUp) {
     console.log(
       c.yellow(
@@ -289,4 +304,32 @@ function mergeAnswers(parts: Record<string, StoredAnswer>[]): Record<string, Sto
     }
   }
   return out;
+}
+
+
+/** Write one completed exchange to the store immediately. */
+function saveExchange(
+  store: Store,
+  e: Exchange,
+  entry: { answers: Record<string, StoredAnswer>[]; tokens: number; conf: number[] },
+): void {
+  store.save(
+    {
+      exchangeId: e.id,
+      tool: e.tool,
+      sessionId: e.sessionId,
+      model: e.model,
+      project: e.project,
+      startedAt: e.startedAt,
+      bankVersion: BANK_VERSION,
+      answers: mergeAnswers(entry.answers),
+      inputTokens: entry.tokens,
+      chunked: entry.answers.length > 1,
+      confidence: entry.conf.length
+        ? entry.conf.reduce((a, b) => a + b, 0) / entry.conf.length
+        : null,
+      evaluatedAt: new Date().toISOString(),
+    },
+    e,
+  );
 }

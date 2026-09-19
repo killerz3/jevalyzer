@@ -158,6 +158,12 @@ export function isRetryable(e: unknown): boolean {
 export interface PoolHooks {
   /** Fired before each retry so callers can throttle a shared limiter. */
   onRateLimit?: () => void;
+  /**
+   * Checked before each item is picked up. Returning true drains the queue
+   * without starting more work, so a run can give up on an exhausted quota
+   * while keeping everything it already earned.
+   */
+  shouldStop?: () => boolean;
   maxAttempts?: number;
 }
 
@@ -173,6 +179,7 @@ export async function pool<T, R>(
   let next = 0;
   const runners = Array.from({ length: Math.max(1, Math.min(concurrency, items.length)) }, async () => {
     for (;;) {
+      if (hooks.shouldStop?.()) return;
       const i = next++;
       if (i >= items.length) return;
       let attempt = 0;
