@@ -182,7 +182,14 @@ export interface GroupStats {
   /** Standard error of the mean score, for honest error bars. */
   stderr: number;
   deliveredRate: number;
+  /**
+   * Corrections as a share of exchanges whose landing we can actually observe.
+   * Turns with no following message say nothing either way, and counting them
+   * as "not corrected" flatters any tool used for one-shot sessions.
+   */
   correctionRate: number;
+  /** Share of exchanges where the reaction is known at all. */
+  reactionCoverage: number;
   frustration: number;
   riskRate: number;
   unverifiedClaimRate: number;
@@ -199,6 +206,16 @@ export function groupBy(
   scored: Scored[],
   keyOf: (s: Scored) => string | null,
 ): GroupStats[] {
+  // Prior for shrinkage. A model with two observed reactions should not post a
+  // 0% or 100% correction rate and outrank one measured over hundreds, so each
+  // group's rate is pulled toward the global rate in proportion to how little
+  // evidence it has.
+  const allKnown = scored.filter((s) => s.substantive && s.reaction && s.reaction !== 'unknown');
+  const prior = allKnown.length
+    ? allKnown.filter((s) => NEGATIVE_REACTIONS.has(s.reaction!)).length / allKnown.length
+    : 0;
+  const PRIOR_WEIGHT = 12;
+
   const groups = new Map<string, Scored[]>();
   for (const s of scored) {
     if (!s.substantive) continue;
@@ -212,6 +229,7 @@ export function groupBy(
   return [...groups.entries()]
     .map(([key, items]) => {
       const n = items.length;
+      const known = items.filter((s) => s.reaction && s.reaction !== 'unknown');
       const mean = (f: (s: Scored) => number) => items.reduce((a, s) => a + f(s), 0) / n;
       const score = mean((s) => s.score);
       const variance =
@@ -222,7 +240,10 @@ export function groupBy(
         score,
         stderr: n > 1 ? Math.sqrt(variance / n) : 0,
         deliveredRate: mean((s) => (s.outcome === 'delivered' ? 1 : 0)),
-        correctionRate: mean((s) => (s.reaction && NEGATIVE_REACTIONS.has(s.reaction) ? 1 : 0)),
+        correctionRate:
+          (known.filter((s) => NEGATIVE_REACTIONS.has(s.reaction!)).length + prior * PRIOR_WEIGHT) /
+          (known.length + PRIOR_WEIGHT),
+        reactionCoverage: known.length / n,
         frustration: mean((s) => s.frustration),
         riskRate: mean((s) => (s.risky ? 1 : 0)),
         unverifiedClaimRate: mean((s) => prob(s.ev.answers.claimedSuccessWithoutEvidence)),

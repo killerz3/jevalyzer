@@ -225,7 +225,11 @@ export const claudeCode: Adapter = {
       if (r.timestamp) cur.endedAt = r.timestamp;
 
       if (r.type === 'assistant') {
-        if (r.message?.model) cur.model = r.message.model;
+        // "<synthetic>" is Claude Code's sentinel for a message it generated
+        // itself (API errors, interrupt notices) - not a model that answered.
+        // Left in, it becomes a 115-exchange "model" at the bottom of the
+        // leaderboard that nobody ever chose.
+        if (r.message?.model && r.message.model !== '<synthetic>') cur.model = r.message.model;
         const u = usageOf(r.message?.usage);
         if (u) {
           cur.usage ??= { input: 0, output: 0, cacheRead: 0, cacheCreate: 0 };
