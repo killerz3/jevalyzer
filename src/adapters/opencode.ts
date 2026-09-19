@@ -59,6 +59,23 @@ function textOf(v: unknown): string {
   return '';
 }
 
+/**
+ * The model is recorded as `{providerID, modelID}` on this schema and as a
+ * plain string on others. Without unwrapping it, every opencode exchange gets
+ * "[object Object]" as its model and drops out of the leaderboard.
+ */
+function modelOf(row: Row): string | null {
+  const direct = pick(row, ['modelID', 'model_id']);
+  if (typeof direct === 'string' && direct) return direct;
+  const m = pick(row, ['model']);
+  if (typeof m === 'string' && m) return m;
+  if (m && typeof m === 'object') {
+    const id = (m as Row).modelID ?? (m as Row).id ?? (m as Row).name;
+    if (typeof id === 'string' && id) return id;
+  }
+  return null;
+}
+
 function tables(db: Database): Set<string> {
   const rows = db.query("SELECT name FROM sqlite_master WHERE type='table'").all() as Row[];
   return new Set(rows.map((r) => String(r.name)));
@@ -123,9 +140,12 @@ export const opencode: Adapter = {
     if (!ref.startsWith('db:')) return empty;
 
     let db: Database | null = null;
+    const dbBytes = Bun.file(DB()).size;
     try {
       db = new Database(DB(), { readonly: true });
       const t = tables(db);
+      const sessionCount =
+        (db.query('SELECT COUNT(*) AS n FROM session').get() as { n: number } | undefined)?.n ?? 1;
       // The session-id column has had several names across versions, so filter
       // in JS after unwrapping the JSON payload rather than guessing in SQL.
       const msgs = (db.query('SELECT * FROM message').all() as Row[])
@@ -178,7 +198,7 @@ export const opencode: Adapter = {
             .filter((p) => pick(p, ['type']) === 'text')
             .map((p) => textOf(pick(p, ['text', 'content'])))
             .join('\n');
-        model = (pick(m, ['modelID', 'model_id', 'model']) as string) ?? model;
+        model = modelOf(m) ?? model;
 
         if (role === 'user') {
           if (!text.trim()) continue;
@@ -231,6 +251,9 @@ export const opencode: Adapter = {
       return {
         meta: {
           ...empty.meta,
+          // Sessions share one database, so report a per-session share of it
+          // rather than 0, which reads as "nothing here".
+          bytes: Math.round(dbBytes / Math.max(1, sessionCount)),
           title: exchanges[0]?.userText.slice(0, 80) ?? null,
           startedAt: exchanges[0]?.startedAt ?? null,
           endedAt: exchanges[exchanges.length - 1]?.endedAt ?? null,
