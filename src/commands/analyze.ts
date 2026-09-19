@@ -205,7 +205,7 @@ export async function analyze(opts: AnalyzeOptions): Promise<void> {
         failures.set(msg, (failures.get(msg) ?? 0) + 1);
         if (isRateLimit(error)) {
           consecutiveRateLimits += 1;
-          if (consecutiveRateLimits >= 6) quotaExhausted = true;
+          if (consecutiveRateLimits >= 3) quotaExhausted = true;
         } else {
           consecutiveRateLimits = 0;
         }

@@ -175,7 +175,7 @@ export async function pool<T, R>(
   onDone?: (result: R | null, error: unknown, index: number) => void,
   hooks: PoolHooks = {},
 ): Promise<void> {
-  const maxAttempts = hooks.maxAttempts ?? 8;
+  const maxAttempts = hooks.maxAttempts ?? 4;
   let next = 0;
   const runners = Array.from({ length: Math.max(1, Math.min(concurrency, items.length)) }, async () => {
     for (;;) {
@@ -194,8 +194,10 @@ export async function pool<T, R>(
             // so every worker slows down rather than just this one.
             const rateLimited = isRateLimit(e);
             if (rateLimited) hooks.onRateLimit?.();
-            const base = rateLimited ? 2000 : 250;
-            await Bun.sleep(Math.min(45_000, base * 2 ** attempt) + Math.random() * 500);
+            // Cap the wait: a throttled free-tier key should surface quickly so
+            // the run can stop and be resumed later, not hang for minutes.
+            const base = rateLimited ? 1500 : 250;
+            await Bun.sleep(Math.min(8_000, base * 2 ** attempt) + Math.random() * 400);
             attempt += 1;
             continue;
           }

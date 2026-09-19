@@ -68,6 +68,27 @@ Precedence is `--api-key` > environment > `~/.jevalyzer/config.json` (mode 600).
 `--model` accepts any AI SDK evaluation model, so you can also point at an
 Anthropic, OpenAI or Google model instead.
 
+## Running on a throttled free key
+
+Free-tier Gateway keys get a small rolling allowance on this model, so a large
+history will not score in one go. Jevalyzer is built for that:
+
+- Every exchange is **saved the moment it is scored**, never batched to the end.
+- Sustained rate limiting **ends the run cleanly** instead of grinding, telling
+  you how many landed and how many remain.
+- Re-running **resumes**: anything already scored is skipped by content hash.
+- `--patient` sends one request at a time, which survives the throttle best.
+
+So the way to score a big archive for free is to leave it dripping:
+
+```bash
+# one pass whenever the allowance has refilled
+while ! jevalyzer analyze --patient --yes | grep -q "Nothing new"; do sleep 600; done
+```
+
+Paid credits remove the throttle entirely and the whole archive finishes in
+minutes for a few cents.
+
 ## What it costs
 
 Jev is **free on Vercel AI Gateway until 25 Sep 2026**. After that it is
