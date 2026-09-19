@@ -49,7 +49,7 @@ export function makeEvaluator(opts: EvaluateOptions) {
   return async function run(packed: Packed, signal?: AbortSignal): Promise<EvaluationOutcome> {
     const result = await evaluate({
       model,
-      state: packed.state as unknown as Record<string, unknown>,
+      state: packed.state as unknown as Parameters<typeof evaluate>[0]["state"],
       questions: QUESTIONS,
       maxRetries: opts.maxRetries ?? 2,
       abortSignal: signal,
