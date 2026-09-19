@@ -24,6 +24,8 @@ export interface Preference {
   model: string;
   n: number;
   index: number;
+  /** How much of the raw index survived shrinkage: n / (n + K). */
+  evidence: number;
   /** True when too few models are being compared for a spread to mean much. */
   thinComparison?: boolean;
   /** 0-100 presentation of the index, relative to the models compared. */
@@ -32,6 +34,12 @@ export interface Preference {
   /** Low when the sample is small - shown as a caveat, not hidden. */
   reliable: boolean;
 }
+
+/**
+ * Evidence half-weight. At n = EVIDENCE_K a model keeps half of its measured
+ * index; well below that it is pulled to the middle of the pack.
+ */
+const EVIDENCE_K = 25;
 
 const WEIGHTS = {
   delivered: 0.3,
@@ -124,11 +132,17 @@ export function preferences(
       z: zs[k][i] ?? 0,
       weight: WEIGHTS[k],
     }));
-    const index = components.reduce((a, cmp) => a + cmp.z * cmp.weight, 0);
+    const rawIndex = components.reduce((a, cmp) => a + cmp.z * cmp.weight, 0);
+    // Shrink toward the middle by how much evidence there is. Four exchanges
+    // cannot outrank a thousand on the strength of four exchanges: a model
+    // with little history lands near average, which is the honest claim, not
+    // at the top or the bottom.
+    const evidence = r.n / (r.n + EVIDENCE_K);
     return {
       model: r.model,
       n: r.n,
-      index,
+      index: rawIndex * evidence,
+      evidence,
       rank: 0,
       thinComparison: raw.length < 3,
       components,

@@ -71,10 +71,13 @@ export async function report(opts: { out: string; open?: boolean }): Promise<voi
     prefs.map((pref) => ({
       label: pref.model,
       value: pref.rank,
-      note: `${pref.n} exchanges${pref.reliable ? '' : ', small sample'}`,
+      note:
+        `${pref.n} exchanges` +
+        (pref.evidence < 0.6 ? `, ${Math.round(pref.evidence * 100)}% weight` : ''),
       tip:
-        `${pref.model}\n` +
-        pref.components.map((cm) => `${cm.label}: ${n1(cm.raw * 100)}%  (z ${cm.z.toFixed(2)})`).join('\n'),
+        `${pref.model}  (n=${pref.n})\n` +
+        pref.components.map((cm) => `${cm.label}: ${n1(cm.raw * 100)}%  (z ${cm.z.toFixed(2)})`).join('\n') +
+        `\nevidence weight: ${Math.round(pref.evidence * 100)}%`,
     })),
     { max: 100 },
   );
@@ -87,7 +90,8 @@ export async function report(opts: { out: string; open?: boolean }): Promise<voi
         (thin
           ? ` Only ${prefs.length} model(s) here, which is too few to rank meaningfully - the bars show the raw index around a midpoint of 50 rather than a spread, and a small gap means a small gap.`
           : ' Scaled 0-100 across the models compared, so it ranks them against each other rather than claiming an absolute.') +
-        (small ? ` ${small} model(s) have fewer than 5 exchanges and are marked accordingly.` : ''),
+        ' Each model\'s index is then shrunk toward the middle by how much evidence stands behind it, so a model with a handful of exchanges cannot outrank one measured over hundreds.' +
+        (small ? ` ${small} model(s) have fewer than 5 exchanges.` : ''),
       withTable(prefChart, {
         headers: ['Model', 'Index', 'Delivered', 'Not corrected', 'Calm', 'No risk', 'Recent share', 'n'],
         numeric: [false, true, true, true, true, true, true, true],
