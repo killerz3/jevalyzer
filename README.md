@@ -11,6 +11,8 @@
   <img src="https://img.shields.io/badge/runtime-Bun%201.2%2B-black" alt="Bun 1.2+">
 </p>
 
+**[Product page](https://folio.kz3.dev/p/jevalyzer)** · **[AGENTS.md](AGENTS.md)** (let an agent install it)
+
 Grade the agent sessions already sitting on your disk.
 
 Jevalyzer reads the chat logs your coding agents write locally — Claude Code,
