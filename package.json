@@ -1,6 +1,6 @@
 {
   "name": "jevalyzer",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Grade your Claude Code, Codex, opencode, Gemini CLI and Antigravity sessions with Jev",
   "type": "module",
   "bin": {
@@ -10,6 +10,7 @@
     "bin",
     "src",
     "README.md",
+    "AGENTS.md",
     "LICENSE"
   ],
   "engines": {

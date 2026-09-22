@@ -20,7 +20,7 @@ program
   .description(
     'Grade your local agent sessions (Claude Code, Codex, opencode, Gemini CLI, Antigravity) with Jev.',
   )
-  .version('0.1.0');
+  .version('1.0.0');
 
 // The default command: `bunx jevalyzer` with no arguments does the whole thing,
 // guided. It is a real subcommand rather than options on the program, because
