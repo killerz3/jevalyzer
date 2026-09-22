@@ -17,7 +17,7 @@
     "bun": ">=1.2.0"
   },
   "scripts": {
-    "jevalyzer": "bun run src/cli.ts",
+    "start": "bun run src/cli.ts",
     "build": "bun build --compile --minify src/cli.ts --outfile dist/jevalyzer",
     "typecheck": "tsc --noEmit",
     "test": "bun test",

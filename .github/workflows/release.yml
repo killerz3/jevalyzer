@@ -51,6 +51,10 @@ jobs:
           registry-url: https://registry.npmjs.org
       - run: bun install --frozen-lockfile
       - run: bun run typecheck && bun test
+      # Not on npm yet, so this is allowed to fail until NPM_TOKEN exists and
+      # the first version has been published by hand. The binaries above are
+      # the release; this step only adds the registry copy.
       - run: npm publish --provenance --access public
+        continue-on-error: true
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

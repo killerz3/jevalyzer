@@ -32,7 +32,7 @@ cents.
 |---|---|---|
 | OS | `uname -s` → `Linux` or `Darwin` | Windows: ASK the user to run this inside WSL2. Paths below assume a POSIX home. |
 | Bun ≥ 1.2 | `bun --version`, else `~/.bun/bin/bun --version` | AUTO: `curl -fsSL https://bun.sh/install \| bash`. Re-check; if it is only at `~/.bun/bin/bun`, use that absolute path everywhere below — do not assume the user's PATH. |
-| Node (optional) | `node --version` | Only needed for `npm install -g`. Without it, use `bunx jevalyzer`. |
+| `git` | `git --version` | AUTO: install with the system package manager. The checkout is the only distribution for now. |
 | Sessions to grade | see Phase 1 | If none are found, stop and tell the user; there is nothing to install for. |
 | Network | outbound HTTPS to `ai-gateway.vercel.sh` | Corporate proxy: `HTTPS_PROXY` is respected by Bun's fetch. |
 
@@ -42,13 +42,17 @@ Record the Bun path. You need it in every later phase.
 
 ## Phase 1 — Prove there is something to grade (AUTO, sends nothing)
 
-Run this before installing anything. It reads local files only, needs no
-account, and is the cheapest way to find out whether this machine is worth
-scoring:
+Run this before anything else. It reads local files only, needs no account, and
+is the cheapest way to find out whether this machine is worth scoring:
 
 ```bash
-bunx jevalyzer scan
+git clone https://github.com/killerz3/jevalyzer ~/jevalyzer
+cd ~/jevalyzer && bun install
+bun start scan
 ```
+
+If `~/jevalyzer` exists and is not this repo, ASK where to put the checkout and
+use that path everywhere below.
 
 Expected: a table of sources with session and exchange counts, then an estimated
 cost. Jevalyzer looks in:
@@ -70,26 +74,32 @@ keep them; Phase 5 refers back to the estimate.
 
 ---
 
-## Phase 2 — Install (AUTO; pick one)
+## Phase 2 — Install (AUTO)
+
+The clone from Phase 1 *is* the install. **Jevalyzer is not on npm yet**, so
+there is no `bunx jevalyzer` and no `npm install -g jevalyzer` — if you find
+yourself typing either, you are inventing a package that does not exist. Run it
+from the checkout:
 
 ```bash
-# A. no install at all — correct answer for a one-off run
-bunx jevalyzer
-
-# B. on PATH, updated with npm
-npm install -g jevalyzer      # or: bun install -g jevalyzer
-
-# C. from source, if the user wants to read or change it
-git clone https://github.com/killerz3/jevalyzer ~/jevalyzer
-cd ~/jevalyzer && bun install && bun test
+cd ~/jevalyzer
+bun start            # the whole guided flow
+bun start scan       # or any subcommand
 ```
 
-Default to **A** unless the user said they want it installed. Choose **B** if
-they want to run it repeatedly. Only clone (**C**) if they asked to hack on it.
+Only if the user wants to call it from other directories, link it once:
 
-Verify: `jevalyzer --version` (or `bunx jevalyzer --version`) prints a version.
-If Node starts the shim and cannot find Bun it says so and exits 127 — that
-means Phase 0 was not actually satisfied; go back.
+```bash
+cd ~/jevalyzer && bun link      # `jevalyzer` now works anywhere; `bun unlink` undoes it
+```
+
+Verify: `bun start --version` (or `jevalyzer --version` if you linked) prints a
+version. Optionally `bun test` — 26 tests, a few hundred milliseconds — to prove
+the checkout is sound.
+
+**For the rest of this file, `jevalyzer …` means `bun start …` run from the
+checkout** — or the linked `jevalyzer …` from anywhere, if you did that. Both
+take identical arguments.
 
 ---
 
@@ -228,12 +238,12 @@ not fine to post publicly without a look.
 
 Tell the user, without printing the key:
 
-1. How it was installed (`bunx`, global npm, or a clone) and how to run it again — `jevalyzer` with no arguments does the whole thing.
+1. Where the checkout is and how to run it again — `bun start` in that directory, with no arguments, does the whole thing. Say whether you linked it.
 2. What was scored: exchanges, models, CLIs, what it actually cost.
 3. Where things live: report path, `~/.jevalyzer/jevalyzer.db` (cache), `~/.jevalyzer/config.json` (key, mode 600).
 4. That re-running only pays for new exchanges, so it is cheap to run weekly.
 5. The one caveat in the numbers: the preference index is *relative* to the models compared, and models with very few exchanges are shrunk toward the middle rather than allowed to top the chart.
-6. How to remove it: `npm uninstall -g jevalyzer`, `rm -rf ~/.jevalyzer`.
+6. How to remove it: `bun unlink` in the checkout if you linked it, then delete the checkout and `rm -rf ~/.jevalyzer`.
 
 ---
 

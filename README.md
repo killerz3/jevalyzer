@@ -5,7 +5,6 @@
 </p>
 
 <p align="center">
-  <a href="https://www.npmjs.com/package/jevalyzer"><img src="https://img.shields.io/npm/v/jevalyzer?color=2a78d6&label=npm" alt="npm"></a>
   <a href="https://github.com/killerz3/jevalyzer/actions/workflows/ci.yml"><img src="https://github.com/killerz3/jevalyzer/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-black" alt="MIT"></a>
   <img src="https://img.shields.io/badge/runtime-Bun%201.2%2B-black" alt="Bun 1.2+">
@@ -30,12 +29,15 @@ cents** for their entire archive.
 ## Just run it
 
 ```bash
-bunx jevalyzer
+git clone https://github.com/killerz3/jevalyzer
+cd jevalyzer
+bun install
+bun start
 ```
 
-No install, no clone, no subcommand to learn. It finds your sessions, walks you
-through setup the first time, asks how deep to go, shows you the cost before
-sending anything, scores with a live progress display, and opens the report.
+No subcommand to learn. `bun start` finds your sessions, walks you through setup
+the first time, asks how deep to go, shows you the cost before sending anything,
+scores with a live progress display, and opens the report.
 
 ```
 jevalyzer  grade your local agent sessions with Jev
@@ -59,11 +61,11 @@ Scoring
 ```
 
 Free tiers are rate-limited, so runs pause. Everything is saved as it lands and
-re-running resumes, so **Ctrl-C is always safe** — run `bunx jevalyzer` again
-and it picks up where it stopped.
+re-running resumes, so **Ctrl-C is always safe** — run `bun start` again and it
+picks up where it stopped.
 
-Requires [Bun](https://bun.sh) 1.2+. A standalone binary that needs no runtime
-is attached to each release.
+Requires [Bun](https://bun.sh) 1.2+ — the session readers use `bun:sqlite`, so
+Node alone is not enough.
 
 ## The report
 
@@ -83,7 +85,7 @@ The failure heatmap and the outcome mix come with the `extensive` profile:
 
 Further down the page, the same treatment is applied per CLI, per project and
 per session, so a bad run shows up as a run rather than as scattered low scores.
-A terminal version of the same thing is `jevalyzer tui`.
+A terminal version of the same thing is `bun start tui`.
 
 ## Two depths
 
@@ -93,7 +95,7 @@ A terminal version of the same thing is `jevalyzer tui`.
 | `extensive` | 21 | Adds the issue heatmap, communication breakdown and risk analysis. |
 
 ```bash
-bunx jevalyzer --profile extensive
+bun start --profile extensive
 ```
 
 They share one store. An `extensive` row satisfies a `minimal` request, so
@@ -103,32 +105,33 @@ comparable rather than minimal being dragged toward a neutral middle.
 
 ## The individual commands
 
-You rarely need these — `bunx jevalyzer` does all of it — but they exist:
+You rarely need these — `bun start` does all of it — but they exist:
 
 ```bash
-jevalyzer scan               # find sessions, estimate cost. Sends nothing, needs no account.
-jevalyzer auth               # store a key
-jevalyzer analyze            # just the scoring (--dry-run, --limit, --patient, --profile)
-jevalyzer report --open      # rebuild the HTML from the store
-jevalyzer tui                # terminal dashboard
-jevalyzer doctor --probe     # check the setup end to end
+bun start scan               # find sessions, estimate cost. Sends nothing, needs no account.
+bun start auth               # store a key
+bun start analyze            # just the scoring (--dry-run, --limit, --patient, --profile)
+bun start report --open      # rebuild the HTML from the store
+bun start tui                # terminal dashboard
+bun start doctor --probe     # check the setup end to end
 ```
 
-## Installing it properly
+## Putting it on your PATH
 
-`bunx jevalyzer` needs nothing, but if you want it on your PATH:
+Run it from the checkout, or link it once and call it from anywhere:
 
 ```bash
-npm install -g jevalyzer     # or: bun install -g jevalyzer
-jevalyzer
+cd jevalyzer
+bun link           # now `jevalyzer` works in any directory
+jevalyzer scan
 ```
 
-The npm package still runs on Bun — the binary is a tiny Node shim that hands
-over to Bun, because the session readers use `bun:sqlite`. If Bun is missing it
-says so and prints the one-line installer. No runtime at all? Download the
-standalone `jevalyzer` binary for your platform from
-[Releases](https://github.com/killerz3/jevalyzer/releases) and drop it on your
-PATH.
+`bun unlink` in the same directory undoes it. Examples further down write
+`jevalyzer …`; from an unlinked checkout that is `bun start …`, with identical
+arguments.
+
+> **Not on npm yet.** For now the clone above is the way to install it. When the
+> package is published this section will say `npm install -g jevalyzer`.
 
 ### Or have your agent install it
 
@@ -138,9 +141,9 @@ run:
 
 > Follow the AGENTS.md in https://github.com/killerz3/jevalyzer and install and set it up
 
-It checks Bun, installs the CLI, walks you through getting a Vercel AI Gateway
-key, runs `scan` and `doctor` first so nothing is sent before you have seen the
-cost, and hands back a report. It is told explicitly never to invent a key or
+It checks Bun, clones and installs, walks you through getting a Vercel AI
+Gateway key, runs `scan` and `doctor` first so nothing is sent before you have
+seen the cost, and hands back a report. It is told explicitly never to invent a key or
 send anything you did not approve.
 
 ## Bring your own account
