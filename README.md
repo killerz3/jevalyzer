@@ -1,7 +1,14 @@
 # jevalyzer
 
 <p align="center">
-  <img src="docs/cover.png" alt="Sessions from several coding agents converge into a prism that grades them" width="100%">
+  <img src="https://raw.githubusercontent.com/killerz3/jevalyzer/main/docs/cover.png" alt="Sessions from several coding agents converge into a prism that grades them" width="100%">
+</p>
+
+<p align="center">
+  <a href="https://www.npmjs.com/package/jevalyzer"><img src="https://img.shields.io/npm/v/jevalyzer?color=2a78d6&label=npm" alt="npm"></a>
+  <a href="https://github.com/killerz3/jevalyzer/actions/workflows/ci.yml"><img src="https://github.com/killerz3/jevalyzer/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-black" alt="MIT"></a>
+  <img src="https://img.shields.io/badge/runtime-Bun%201.2%2B-black" alt="Bun 1.2+">
 </p>
 
 Grade the agent sessions already sitting on your disk.
@@ -56,6 +63,26 @@ and it picks up where it stopped.
 Requires [Bun](https://bun.sh) 1.2+. A standalone binary that needs no runtime
 is attached to each release.
 
+## The report
+
+One self-contained HTML file. No server, no upload, no JavaScript dependencies —
+open it, mail it, or keep it. Every chart has a **Show the numbers** toggle with
+the table behind it.
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/killerz3/jevalyzer/main/docs/report.png" alt="Jevalyzer report: headline tiles, the preference index and the Jevalyzer Score per model" width="100%">
+</p>
+
+The failure heatmap and the outcome mix come with the `extensive` profile:
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/killerz3/jevalyzer/main/docs/issues.png" alt="Failure-mode heatmap per model, and how every turn ended" width="100%">
+</p>
+
+Further down the page, the same treatment is applied per CLI, per project and
+per session, so a bad run shows up as a run rather than as scattered low scores.
+A terminal version of the same thing is `jevalyzer tui`.
+
 ## Two depths
 
 | Profile | Questions | Good for |
@@ -84,6 +111,35 @@ jevalyzer report --open      # rebuild the HTML from the store
 jevalyzer tui                # terminal dashboard
 jevalyzer doctor --probe     # check the setup end to end
 ```
+
+## Installing it properly
+
+`bunx jevalyzer` needs nothing, but if you want it on your PATH:
+
+```bash
+npm install -g jevalyzer     # or: bun install -g jevalyzer
+jevalyzer
+```
+
+The npm package still runs on Bun — the binary is a tiny Node shim that hands
+over to Bun, because the session readers use `bun:sqlite`. If Bun is missing it
+says so and prints the one-line installer. No runtime at all? Download the
+standalone `jevalyzer` binary for your platform from
+[Releases](https://github.com/killerz3/jevalyzer/releases) and drop it on your
+PATH.
+
+### Or have your agent install it
+
+The repo carries an [`AGENTS.md`](AGENTS.md) written for coding agents rather
+than for people. Paste this into Claude Code, Codex, Gemini CLI or whatever you
+run:
+
+> Follow the AGENTS.md in https://github.com/killerz3/jevalyzer and install and set it up
+
+It checks Bun, installs the CLI, walks you through getting a Vercel AI Gateway
+key, runs `scan` and `doctor` first so nothing is sent before you have seen the
+cost, and hands back a report. It is told explicitly never to invent a key or
+send anything you did not approve.
 
 ## Bring your own account
 
