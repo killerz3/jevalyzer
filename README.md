@@ -155,7 +155,7 @@ the one that can finish a large run for free.
 **Vercel AI Gateway** (`--backend gateway`, model `typesafe-ai/jev`)
 
 1. Create a key at the [AI Gateway dashboard](https://vercel.com/d?to=/[team]/~/ai-gateway/api-keys)
-2. `jevalyzer auth`, or `export AI_GATEWAY_API_KEY=vck_...`
+2. `jevalyzer auth`, or `export AI_GATEWAY_API_KEY=<your vck_ key>`
 
 > Two things to know about the Gateway on a **hobby** plan:
 > - A **credit card must be on file** before it will serve any request, free or not.
@@ -185,7 +185,7 @@ Context there is **32k**, not 64k; the packing budget adapts automatically.
 **TypeSafe directly** (`--backend typesafe`, model `jev-latest`)
 
 1. Create a key at [console.typesafe.ai/keys](https://console.typesafe.ai/keys)
-2. `jevalyzer auth --typesafe`, or `export TYPESAFE_AI_API_KEY=sk-...`
+2. `jevalyzer auth --typesafe`, or `export TYPESAFE_AI_API_KEY=<your sk- key>`
 
 Early access is waitlisted and there is no free credit, so this is mainly for
 people who already have a TypeSafe account.

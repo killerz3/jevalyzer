@@ -120,10 +120,10 @@ Send the user this, verbatim, then wait:
 Then store it — let jevalyzer write the file, do not write it yourself:
 
 ```bash
-AI_GATEWAY_API_KEY=vck_... jevalyzer auth
+AI_GATEWAY_API_KEY=<your vck_ key> jevalyzer auth
 ```
 
-or, non-interactively, `export AI_GATEWAY_API_KEY=vck_...` for the session.
+or, non-interactively, `export AI_GATEWAY_API_KEY=<your vck_ key>` for the session.
 It lands in `~/.jevalyzer/config.json`, mode 600. Confirm with:
 
 ```bash

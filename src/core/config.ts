@@ -7,7 +7,7 @@ import { HOME } from './store.ts';
  */
 
 export interface Config {
-  /** Vercel AI Gateway key (vck_...). */
+  /** Vercel AI Gateway key, prefixed `vck_`. */
   apiKey?: string;
   /** Direct TypeSafe key, used when the gateway route is unavailable. */
   typesafeApiKey?: string;
@@ -58,7 +58,7 @@ export const SETUP_HELP = `
 No AI Gateway key found. Jevalyzer uses your own Vercel account:
 
   1. Create a key at https://vercel.com/d?to=/[team]/~/ai-gateway/api-keys
-  2. jevalyzer auth            (or: export AI_GATEWAY_API_KEY=vck_...)
+  2. jevalyzer auth            (or: export AI_GATEWAY_API_KEY=<your vck_ key>)
 
 Everything except scoring works without a key - try 'jevalyzer scan'.
 `;
