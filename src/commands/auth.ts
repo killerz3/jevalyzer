@@ -39,7 +39,8 @@ export async function auth(opts: {
         c.dim('     Use the "Workers AI" template, or any token with Workers AI: Read.\n'),
     );
     const accountId = prompt('Cloudflare account id:')?.trim();
-    const token = prompt('Cloudflare API token:')?.trim();
+    const tokenLabel = 'Cloudflare API token:';
+    const token = prompt(tokenLabel)?.trim();
     if (!accountId || !token) {
       console.log('Both are needed; nothing saved.');
       return;
